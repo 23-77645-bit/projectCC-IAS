@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header">
+        <h5 class="card-title mb-0">Edit Course</h5>
+      </div>
+      <div class="card-body">
+        <form method="post" action="/courses/{{ course.id }}/edit">
+          <div class="mb-3">
+            <label for="name" class="form-label">Course Name</label>
+            <input type="text" class="form-control" id="name" name="name" value="{{ course.name }}" required>
+          </div>
+          <div class="mb-3">
+            <label for="description" class="form-label">Description</label>
+            <textarea class="form-control" id="description" name="description" rows="3">{{ course.description }}</textarea>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+            <a href="/courses" class="btn btn-secondary">Back to Courses</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

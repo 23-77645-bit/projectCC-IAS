@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header">
+        <h5 class="card-title mb-0">Upload Students via CSV</h5>
+      </div>
+      <div class="card-body">
+        <form method="post" action="/students/upload-csv" enctype="multipart/form-data">
+          <div class="mb-3">
+            <label for="course_id" class="form-label">Course</label>
+            <select class="form-select" id="course_id" name="course_id" required>
+              <option value="">Select a course</option>
+              {% for course in courses %}
+              <option value="{{ course.id }}">{{ course.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label for="csv_file" class="form-label">CSV File</label>
+            <input class="form-control" id="csv_file" name="csv_file" type="file" accept=".csv" required>
+          </div>
+          <div class="mb-3">
+            <p class="text-muted small">CSV should include headers: name, email, year_level.</p>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Upload CSV</button>
+            <a href="/students" class="btn btn-secondary">Back to Students</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

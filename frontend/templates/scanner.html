@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header">
+        <h5 class="card-title mb-0">Live Camera Scanner</h5>
+        <small class="text-muted">The camera opens automatically. Close this tab to stop scanning.</small>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="row mt-4">
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-body">
+        <div id="qr-reader"></div>
+        <p class="text-muted small mt-2">Point your camera at a student's QR code. The page will record attendance automatically.</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header">
+        <h6 class="card-title mb-0">Scan Result</h6>
+      </div>
+      <div class="card-body">
+        <div id="message"></div>
+        <div id="student-card"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://unpkg.com/html5-qrcode@2.3.11/minified/html5-qrcode.min.js"></script>
+<script>
+  const messageEl = document.getElementById('message')
+  const cardEl = document.getElementById('student-card')
+  let scanBusy = false
+
+  function renderMessage(text, type) {
+    messageEl.innerHTML = text
+      ? `<div class="alert alert-${type === 'success' ? 'success' : 'danger'} alert-dismissible fade show" role="alert">${text}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>`
+      : ''
+  }
+
+  function renderStudent(student, attendance) {
+    if (!student) {
+      cardEl.innerHTML = ''
+      return
+    }
+    const timeIn = attendance?.time_in ? new Date(attendance.time_in).toLocaleTimeString() : 'N/A'
+    const date = attendance?.date ? new Date(attendance.date).toLocaleDateString() : 'N/A'
+    const status = attendance?.status || 'present'
+    cardEl.innerHTML = `
+      <div class="card border-primary">
+        <div class="card-body">
+          <h5 class="card-title">${student.name}</h5>
+          <p class="card-subtitle mb-3 text-muted">${student.course_name}</p>
+          <div class="row">
+            <div class="col-sm-6">
+              <strong>Year Level:</strong> ${student.year_level || '—'}
+            </div>
+            <div class="col-sm-6">
+              <strong>Date:</strong> ${date}
+            </div>
+          </div>
+          <div class="row mt-2">
+            <div class="col-sm-6">
+              <strong>Time:</strong> ${timeIn}
+            </div>
+            <div class="col-sm-6">
+              <strong>Status:</strong> <span class="badge bg-success">${status}</span>
+            </div>
+          </div>
+        </div>
+      </div>`
+  }
+
+  function postScan(qrData) {
+    if (scanBusy) {
+      return
+    }
+    scanBusy = true
+    fetch('/scan', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ qr_data: qrData })
+    })
+      .then(async (response) => {
+        const result = await response.json()
+        if (!response.ok) {
+          throw new Error(result.error || 'Unable to process scan')
+        }
+        renderMessage(result.message, 'success')
+        renderStudent(result.student, result.attendance)
+      })
+      .catch((err) => {
+        renderMessage(err.message, 'error')
+        renderStudent(null, null)
+      })
+      .finally(() => {
+        setTimeout(() => {
+          scanBusy = false
+        }, 1200)
+      })
+  }
+
+  const html5QrCodeScanner = new Html5Qrcode('qr-reader')
+  html5QrCodeScanner
+    .start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 260, height: 260 } },
+      (decodedText) => {
+        if (!scanBusy) {
+          postScan(decodedText)
+        }
+      },
+      (errorMessage) => {
+        console.warn('Scanner error:', errorMessage)
+      }
+    )
+    .catch((err) => {
+      renderMessage('Unable to start camera: ' + err, 'error')
+    })
+</script>
+{% endblock %}

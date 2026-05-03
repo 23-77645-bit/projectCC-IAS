@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row mb-4">
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body">
+        <h5 class="card-title">Courses</h5>
+        <h2 class="text-primary">{{ courses_count }}</h2>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body">
+        <h5 class="card-title">Students</h5>
+        <h2 class="text-success">{{ students_count }}</h2>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body">
+        <h5 class="card-title">Attendance Logs</h5>
+        <h2 class="text-info">{{ attendance_count }}</h2>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header">
+        <h5 class="card-title mb-0">Recent Attendance</h5>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-hover">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Course</th>
+                <th>Date</th>
+                <th>Time In</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for record in recent_records %}
+              <tr>
+                <td>{{ record.student_name }}</td>
+                <td>{{ record.course_name }}</td>
+                <td>{{ record.date }}</td>
+                <td>{{ record.time_in }}</td>
+                <td><span class="badge bg-success">Present</span></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header">
+        <h5 class="card-title mb-0">Quick Actions</h5>
+      </div>
+      <div class="card-body d-grid gap-2">
+        <a href="/courses" class="btn btn-primary">Manage Courses</a>
+        <a href="/students" class="btn btn-success">Manage Students</a>
+        <a href="/students/upload-csv" class="btn btn-info">Upload Students</a>
+        <a href="/scanner" class="btn btn-warning">Open Scanner</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
