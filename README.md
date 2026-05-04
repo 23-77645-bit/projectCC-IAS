@@ -259,7 +259,7 @@ Verify SMTP credentials in `.env`:
 **Academic Year:** 2025-2026  
 **Institution:** Batangas State University ARASOF-Nasugbu
 
-**Approved by:**  
+**To be Approved by:**  
 Mr. Calvin John V. Placio  
 Course Instructor
 
