@@ -1,596 +1,598 @@
-from datetime import date, datetime, timedelta
-from functools import wraps
-import csv
-import io
 import os
+import csv
 import uuid
-from io import BytesIO
-
-import pymysql
+import jwt
+import datetime
 import qrcode
-from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
+from functools import wraps
+from flask import Flask, request, jsonify, redirect, session, send_from_directory
 from flask_mail import Mail, Message
-from flask_cors import CORS
+import pymysql
+from dotenv import load_dotenv
 
-from config import (
-    ADMIN_PASSWORD,
-    ADMIN_USERNAME,
-    FLASK_SECRET_KEY,
-    MAIL_DEFAULT_SENDER,
-    MAIL_PASSWORD,
-    MAIL_PORT,
-    MAIL_SERVER,
-    MAIL_USE_SSL,
-    MAIL_USE_TLS,
-    MAIL_USERNAME,
-    MYSQL_DATABASE,
-    MYSQL_HOST,
-    MYSQL_PASSWORD,
-    MYSQL_USER,
-)
+load_dotenv()
 
-app = Flask(__name__, template_folder='../frontend/templates', static_folder='../frontend/static')
-app.secret_key = FLASK_SECRET_KEY
-app.config.update(
-    MAIL_SERVER=MAIL_SERVER,
-    MAIL_PORT=int(MAIL_PORT),
-    MAIL_USE_TLS=str(MAIL_USE_TLS).lower() in ('true', '1', 'yes'),
-    MAIL_USE_SSL=str(MAIL_USE_SSL).lower() in ('true', '1', 'yes'),
-    MAIL_USERNAME=MAIL_USERNAME,
-    MAIL_PASSWORD=MAIL_PASSWORD,
-    MAIL_DEFAULT_SENDER=MAIL_DEFAULT_SENDER,
-)
+app = Flask(__name__)
+app.secret_key = os.getenv('JWT_SECRET', 'default-secret-key')
+
+app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
+app.config['MAIL_PORT'] = 587
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME', '')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD', '')
+
 mail = Mail(app)
-CORS(app)
 
-
-@app.after_request
-def add_no_cache_headers(response):
-    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
-    return response
-
+db_config = {
+    'host': os.getenv('MYSQL_HOST', 'localhost'),
+    'user': os.getenv('MYSQL_USER', 'root'),
+    'password': os.getenv('MYSQL_PASSWORD', ''),
+    'database': os.getenv('MYSQL_DATABASE', 'attendance_db'),
+    'cursorclass': pymysql.cursors.DictCursor
+}
 
 def get_db_connection():
-    return pymysql.connect(
-        host=MYSQL_HOST,
-        user=MYSQL_USER,
-        password=MYSQL_PASSWORD,
-        database=MYSQL_DATABASE,
-        cursorclass=pymysql.cursors.DictCursor,
-    )
+    return pymysql.connect(**db_config)
 
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        if 'Authorization' in request.headers:
+            token = request.headers['Authorization'].split(' ')[1]
+        if not token and 'token' in session:
+            token = session.get('token')
+        
+        if not token:
+            return jsonify({'error': 'Token is missing'}), 401
+        
+        try:
+            data = jwt.decode(token, os.getenv('JWT_SECRET', 'default-secret-key'), algorithms=['HS256'])
+            current_user = data['username']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token has expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        return f(current_user, *args, **kwargs)
+    return decorated
 
-def ensure_admin_teacher():
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                'INSERT IGNORE INTO teachers (username, password, email) VALUES (%s, %s, %s)',
-                (ADMIN_USERNAME, ADMIN_PASSWORD, f'{ADMIN_USERNAME}@localhost'),
-            )
-            conn.commit()
-    finally:
-        conn.close()
-
-
-def get_teacher_by_username(username):
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute('SELECT id, username, password, email FROM teachers WHERE username = %s', (username,))
-            return cursor.fetchone()
-    finally:
-        conn.close()
-
-
-def login_required(fn):
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        if not session.get('authenticated'):
-            return redirect(url_for('login'))
-        return fn(*args, **kwargs)
-
-    return wrapper
-
-
-def build_qr_image_bytes(qr_value):
-    qr = qrcode.QRCode(box_size=8, border=2)
-    qr.add_data(qr_value)
-    qr.make(fit=True)
-    image = qr.make_image(fill_color='black', back_color='white')
-    buffer = BytesIO()
-    image.save(buffer, format='PNG')
-    buffer.seek(0)
-    return buffer
-
-
-def send_qr_email(student_name, course_name, qr_value, recipient_email):
-    message = Message(
-        subject=f'QR Attendance Card for {course_name}',
-        recipients=[recipient_email],
-    )
-    message.body = (
-        f'Hello {student_name},\n\n'
-        f'Your QR attendance code for {course_name} is ready. Scan the attached QR code to track attendance in real time.\n\n'
-        'Keep this QR safe and present it to your teacher when asked.\n'
-    )
-    qr_file = build_qr_image_bytes(qr_value)
-    message.attach('qr-attendance.png', 'image/png', qr_file.read())
-    mail.send(message)
-
-
-def generate_qr_value():
-    return f'QR-{uuid.uuid4().hex[:18].upper()}'
-
-
-def get_teacher_courses(teacher_id):
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute('SELECT id, name, description FROM courses WHERE teacher_id = %s ORDER BY created_at DESC', (teacher_id,))
-            return cursor.fetchall()
-    finally:
-        conn.close()
-
-
-def get_student_details(student_id, teacher_id):
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                'SELECT s.id, s.name, s.email, s.year_level, s.qr_data, c.id AS course_id, c.name AS course_name '
-                'FROM students s '
-                'JOIN courses c ON s.course_id = c.id '
-                'WHERE s.id = %s AND c.teacher_id = %s',
-                (student_id, teacher_id),
-            )
-            return cursor.fetchone()
-    finally:
-        conn.close()
-
-
-def fetch_active_teacher_id():
-    return session.get('teacher_id')
-
-
-@app.route('/')
-def home():
-    if session.get('authenticated'):
-        return redirect(url_for('dashboard'))
-    return redirect(url_for('login'))
-
-
-@app.route('/login', methods=['GET', 'POST'])
+@app.route('/login', methods=['POST'])
 def login():
-    if request.method == 'GET':
-        return render_template('login.html')
+    try:
+        data = request.get_json()
+        username = data.get('username', '')
+        password = data.get('password', '')
+        
+        admin_username = os.getenv('ADMIN_USERNAME', 'admin')
+        admin_password = os.getenv('ADMIN_PASSWORD', 'admin123')
+        
+        if username == admin_username and password == admin_password:
+            token = jwt.encode({
+                'username': username,
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+            }, os.getenv('JWT_SECRET', 'default-secret-key'), algorithm='HS256')
+            
+            session['token'] = token
+            session['username'] = username
+            
+            return jsonify({'token': token, 'message': 'Login successful'}), 200
+        else:
+            return jsonify({'error': 'Invalid credentials'}), 401
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-    username = request.form.get('username', '').strip()
-    password = request.form.get('password', '').strip()
-    teacher = get_teacher_by_username(username)
-    if not teacher and username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-        teacher = {'id': None, 'username': username, 'password': password, 'email': f'{username}@localhost'}
-    if not teacher or teacher['password'] != password:
-        return render_template('login.html', error='Invalid credentials', username=username)
-    session['authenticated'] = True
-    session['teacher_id'] = teacher['id']
-    session['username'] = teacher['username']
-    return redirect(url_for('dashboard'))
-
-
-@app.route('/logout')
+@app.route('/logout', methods=['GET'])
 def logout():
     session.clear()
-    return redirect(url_for('login'))
+    return redirect('/login')
 
+@app.route('/')
+def index():
+    if 'token' in session:
+        return redirect('/dashboard')
+    return redirect('/login')
 
-@app.route('/dashboard')
-@login_required
-def dashboard():
-    teacher_id = fetch_active_teacher_id()
-    conn = get_db_connection()
+@app.route('/dashboard', methods=['GET'])
+@token_required
+def dashboard(current_user):
     try:
-        with conn.cursor() as cursor:
-            cursor.execute('SELECT COUNT(*) AS total FROM courses WHERE teacher_id = %s', (teacher_id,))
-            courses_count = cursor.fetchone()['total']
-            cursor.execute(
-                'SELECT COUNT(*) AS total FROM students s JOIN courses c ON s.course_id = c.id WHERE c.teacher_id = %s',
-                (teacher_id,),
-            )
-            students_count = cursor.fetchone()['total']
-            cursor.execute(
-                'SELECT COUNT(*) AS total FROM attendance a '
-                'JOIN students s ON a.student_id = s.id '
-                'JOIN courses c ON s.course_id = c.id '
-                'WHERE c.teacher_id = %s',
-                (teacher_id,),
-            )
-            attendance_count = cursor.fetchone()['total']
-            cursor.execute(
-                'SELECT a.id, s.name AS student_name, c.name AS course_name, a.time_in, a.time_out, a.date '
-                'FROM attendance a '
-                'JOIN students s ON a.student_id = s.id '
-                'JOIN courses c ON s.course_id = c.id '
-                'WHERE c.teacher_id = %s '
-                'ORDER BY a.id DESC LIMIT 8',
-                (teacher_id,),
-            )
-            recent_records = cursor.fetchall()
-    finally:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT COUNT(*) as count FROM students')
+        total_students = cursor.fetchone()['count']
+        
+        cursor.execute('SELECT COUNT(*) as count FROM courses')
+        total_courses = cursor.fetchone()['count']
+        
+        today = datetime.date.today()
+        cursor.execute('SELECT COUNT(DISTINCT student_id) as count FROM attendance WHERE date = %s AND status = "present"', (today,))
+        present_today = cursor.fetchone()['count']
+        
+        cursor.execute('''
+            SELECT COUNT(DISTINCT s.id) as count 
+            FROM students s
+            LEFT JOIN attendance a ON s.id = a.student_id AND a.date = %s
+            WHERE a.id IS NULL
+        ''', (today,))
+        absent_today = cursor.fetchone()['count']
+        
+        cursor.close()
         conn.close()
-    return render_template(
-        'dashboard.html',
-        courses_count=courses_count,
-        students_count=students_count,
-        attendance_count=attendance_count,
-        recent_records=recent_records,
-    )
+        
+        return jsonify({
+            'total_students': total_students,
+            'total_courses': total_courses,
+            'present_today': present_today,
+            'absent_today': absent_today
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-
-@app.route('/courses', methods=['GET', 'POST'])
-@login_required
-def courses():
-    teacher_id = fetch_active_teacher_id()
-    if request.method == 'POST':
-        name = request.form.get('name', '').strip()
-        description = request.form.get('description', '').strip()
-        if name:
-            conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute(
-                        'INSERT INTO courses (teacher_id, name, description) VALUES (%s, %s, %s)',
-                        (teacher_id, name, description),
-                    )
-                    conn.commit()
-                flash('Course created successfully.')
-            finally:
-                conn.close()
-        else:
-            flash('Course name is required.')
-        return redirect(url_for('courses'))
-    course_list = get_teacher_courses(teacher_id)
-    return render_template('courses.html', courses=course_list)
-
-
-@app.route('/courses/<int:course_id>/edit', methods=['GET', 'POST'])
-@login_required
-def edit_course(course_id):
-    teacher_id = fetch_active_teacher_id()
-    conn = get_db_connection()
+@app.route('/students', methods=['GET'])
+@token_required
+def get_students(current_user):
     try:
-        with conn.cursor() as cursor:
-            cursor.execute('SELECT id, name, description FROM courses WHERE id = %s AND teacher_id = %s', (course_id, teacher_id))
-            course = cursor.fetchone()
-            if not course:
-                return redirect(url_for('courses'))
-            if request.method == 'POST':
-                name = request.form.get('name', '').strip()
-                description = request.form.get('description', '').strip()
-                if name:
-                    cursor.execute('UPDATE courses SET name = %s, description = %s WHERE id = %s', (name, description, course_id))
-                    conn.commit()
-                    flash('Course updated successfully.')
-                    return redirect(url_for('courses'))
-                flash('Course name is required.')
-    finally:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT s.id, s.name, s.email, s.qr_data, s.qr_image_path, s.created_at, c.name as course_name
+            FROM students s
+            LEFT JOIN courses c ON s.course_id = c.id
+            ORDER BY s.created_at DESC
+        ''')
+        
+        students = cursor.fetchall()
+        cursor.close()
         conn.close()
-    return render_template('course_edit.html', course=course)
+        
+        return jsonify(students), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-
-@app.route('/courses/<int:course_id>/delete', methods=['POST'])
-@login_required
-def delete_course(course_id):
-    teacher_id = fetch_active_teacher_id()
-    conn = get_db_connection()
+@app.route('/students', methods=['POST'])
+@token_required
+def create_student(current_user):
     try:
-        with conn.cursor() as cursor:
-            cursor.execute('DELETE FROM courses WHERE id = %s AND teacher_id = %s', (course_id, teacher_id))
+        data = request.get_json()
+        name = data.get('name', '')
+        email = data.get('email', '')
+        course_id = data.get('course_id')
+        
+        if not name or not email:
+            return jsonify({'error': 'Name and email are required'}), 400
+        
+        qr_data = str(uuid.uuid4())
+        qr_filename = f"{qr_data}.png"
+        qr_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'frontend', 'static', 'images', 'qrcodes')
+        qr_filepath = os.path.join(qr_folder, qr_filename)
+        
+        os.makedirs(qr_folder, exist_ok=True)
+        
+        img = qrcode.make(qr_data)
+        img.save(qr_filepath)
+        
+        qr_image_path = f"/static/images/qrcodes/{qr_filename}"
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO students (name, email, course_id, qr_data, qr_image_path)
+            VALUES (%s, %s, %s, %s, %s)
+        ''', (name, email, course_id, qr_data, qr_image_path))
+        
+        conn.commit()
+        student_id = cursor.lastrowid
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'id': student_id, 'name': name, 'email': email, 'course_id': course_id, 'qr_data': qr_data, 'qr_image_path': qr_image_path}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/students/<int:id>', methods=['PUT'])
+@token_required
+def update_student(current_user, id):
+    try:
+        data = request.get_json()
+        name = data.get('name')
+        email = data.get('email')
+        course_id = data.get('course_id')
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM students WHERE id = %s', (id,))
+        student = cursor.fetchone()
+        
+        if not student:
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Student not found'}), 404
+        
+        update_fields = []
+        values = []
+        
+        if name is not None:
+            update_fields.append('name = %s')
+            values.append(name)
+        if email is not None:
+            update_fields.append('email = %s')
+            values.append(email)
+        if course_id is not None:
+            update_fields.append('course_id = %s')
+            values.append(course_id)
+        
+        if update_fields:
+            values.append(id)
+            query = f"UPDATE students SET {', '.join(update_fields)} WHERE id = %s"
+            cursor.execute(query, values)
             conn.commit()
-    finally:
+        
+        cursor.execute('SELECT * FROM students WHERE id = %s', (id,))
+        updated_student = cursor.fetchone()
+        
+        cursor.close()
         conn.close()
-    flash('Course deleted successfully.')
-    return redirect(url_for('courses'))
+        
+        return jsonify(updated_student), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-
-@app.route('/students', methods=['GET', 'POST'])
-@login_required
-def students():
-    teacher_id = fetch_active_teacher_id()
-    conn = get_db_connection()
-    if request.method == 'POST':
-        name = request.form.get('name', '').strip()
-        email = request.form.get('email', '').strip()
-        year_level = request.form.get('year_level', '').strip()
-        course_id = request.form.get('course_id')
-        if name and email and course_id:
-            qr_value = generate_qr_value()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute(
-                        'INSERT INTO students (course_id, name, email, year_level, qr_data) VALUES (%s, %s, %s, %s, %s)',
-                        (course_id, name, email, year_level, qr_value),
-                    )
-                    conn.commit()
-                    cursor.execute('SELECT c.name FROM courses c WHERE c.id = %s AND c.teacher_id = %s', (course_id, teacher_id))
-                    course = cursor.fetchone()
-                send_qr_email(name, course['name'], qr_value, email)
-                flash('Student added and QR email sent.')
-            except Exception:
-                flash('Student added, but email delivery failed.')
-        else:
-            flash('Name, email, and course selection are required.')
-        return redirect(url_for('students'))
+@app.route('/students/<int:id>', methods=['DELETE'])
+@token_required
+def delete_student(current_user, id):
     try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                'SELECT s.id, s.name, s.email, s.year_level, s.qr_data, c.name AS course_name '
-                'FROM students s JOIN courses c ON s.course_id = c.id '
-                'WHERE c.teacher_id = %s ORDER BY s.id DESC',
-                (teacher_id,),
-            )
-            student_list = cursor.fetchall()
-            cursor.execute('SELECT id, name FROM courses WHERE teacher_id = %s', (teacher_id,))
-            course_list = cursor.fetchall()
-    finally:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT qr_image_path FROM students WHERE id = %s', (id,))
+        student = cursor.fetchone()
+        
+        if not student:
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Student not found'}), 404
+        
+        qr_image_path = student['qr_image_path']
+        if qr_image_path:
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            full_path = os.path.join(base_dir, qr_image_path.lstrip('/'))
+            if os.path.exists(full_path):
+                os.remove(full_path)
+        
+        cursor.execute('DELETE FROM students WHERE id = %s', (id,))
+        conn.commit()
+        
+        cursor.close()
         conn.close()
-    return render_template('students.html', students=student_list, courses=course_list)
+        
+        return jsonify({'message': 'Student deleted successfully'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-
-@app.route('/students/<int:student_id>/edit', methods=['GET', 'POST'])
-@login_required
-def edit_student(student_id):
-    teacher_id = fetch_active_teacher_id()
-    conn = get_db_connection()
+@app.route('/courses', methods=['GET'])
+@token_required
+def get_courses(current_user):
     try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                'SELECT s.id, s.name, s.email, s.year_level, s.qr_data, s.course_id, c.name AS course_name '
-                'FROM students s JOIN courses c ON s.course_id = c.id '
-                'WHERE s.id = %s AND c.teacher_id = %s',
-                (student_id, teacher_id),
-            )
-            student = cursor.fetchone()
-            if not student:
-                return redirect(url_for('students'))
-            if request.method == 'POST':
-                name = request.form.get('name', '').strip()
-                email = request.form.get('email', '').strip()
-                year_level = request.form.get('year_level', '').strip()
-                course_id = request.form.get('course_id')
-                if name and email and course_id:
-                    cursor.execute(
-                        'UPDATE students SET name = %s, email = %s, year_level = %s, course_id = %s WHERE id = %s',
-                        (name, email, year_level, course_id, student_id),
-                    )
-                    conn.commit()
-                    flash('Student information updated.')
-                    return redirect(url_for('students'))
-                flash('Student name, email, and course are required.')
-            cursor.execute('SELECT id, name FROM courses WHERE teacher_id = %s', (teacher_id,))
-            course_list = cursor.fetchall()
-    finally:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT c.id, c.name, c.section, c.schedule, c.created_at, t.name as teacher_name,
+                   (SELECT COUNT(*) FROM students WHERE course_id = c.id) as student_count
+            FROM courses c
+            LEFT JOIN teachers t ON c.teacher_id = t.id
+            ORDER BY c.created_at DESC
+        ''')
+        
+        courses = cursor.fetchall()
+        cursor.close()
         conn.close()
-    return render_template('student_edit.html', student=student, courses=course_list)
+        
+        return jsonify(courses), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-
-@app.route('/students/<int:student_id>/delete', methods=['POST'])
-@login_required
-def delete_student(student_id):
-    teacher_id = fetch_active_teacher_id()
-    conn = get_db_connection()
+@app.route('/courses', methods=['POST'])
+@token_required
+def create_course(current_user):
     try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                'DELETE s FROM students s '
-                'JOIN courses c ON s.course_id = c.id '
-                'WHERE s.id = %s AND c.teacher_id = %s',
-                (student_id, teacher_id),
-            )
+        data = request.get_json()
+        name = data.get('name', '')
+        section = data.get('section', '')
+        schedule = data.get('schedule', '')
+        teacher_id = data.get('teacher_id')
+        
+        if not name:
+            return jsonify({'error': 'Course name is required'}), 400
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO courses (name, section, schedule, teacher_id)
+            VALUES (%s, %s, %s, %s)
+        ''', (name, section, schedule, teacher_id))
+        
+        conn.commit()
+        course_id = cursor.lastrowid
+        
+        cursor.execute('SELECT * FROM courses WHERE id = %s', (course_id,))
+        new_course = cursor.fetchone()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify(new_course), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/courses/<int:id>', methods=['PUT'])
+@token_required
+def update_course(current_user, id):
+    try:
+        data = request.get_json()
+        name = data.get('name')
+        section = data.get('section')
+        schedule = data.get('schedule')
+        teacher_id = data.get('teacher_id')
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM courses WHERE id = %s', (id,))
+        course = cursor.fetchone()
+        
+        if not course:
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Course not found'}), 404
+        
+        update_fields = []
+        values = []
+        
+        if name is not None:
+            update_fields.append('name = %s')
+            values.append(name)
+        if section is not None:
+            update_fields.append('section = %s')
+            values.append(section)
+        if schedule is not None:
+            update_fields.append('schedule = %s')
+            values.append(schedule)
+        if teacher_id is not None:
+            update_fields.append('teacher_id = %s')
+            values.append(teacher_id)
+        
+        if update_fields:
+            values.append(id)
+            query = f"UPDATE courses SET {', '.join(update_fields)} WHERE id = %s"
+            cursor.execute(query, values)
             conn.commit()
-    finally:
+        
+        cursor.execute('SELECT * FROM courses WHERE id = %s', (id,))
+        updated_course = cursor.fetchone()
+        
+        cursor.close()
         conn.close()
-    flash('Student deleted successfully.')
-    return redirect(url_for('students'))
+        
+        return jsonify(updated_course), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-
-@app.route('/students/upload-csv', methods=['GET', 'POST'])
-@login_required
-def upload_csv():
-    teacher_id = fetch_active_teacher_id()
-    if request.method == 'POST':
-        course_id = request.form.get('course_id')
-        csv_file = request.files.get('csv_file')
-        if course_id and csv_file:
-            content = csv_file.read().decode('utf-8-sig')
-            reader = csv.DictReader(io.StringIO(content))
-            inserted = 0
-            failed = 0
-            conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute('SELECT name FROM courses WHERE id = %s AND teacher_id = %s', (course_id, teacher_id))
-                    course = cursor.fetchone()
-                    if not course:
-                        flash('Selected course is not available.')
-                        return redirect(url_for('upload_csv'))
-                    for row in reader:
-                        name = (row.get('name') or '').strip()
-                        email = (row.get('email') or '').strip()
-                        year_level = (row.get('year_level') or '').strip()
-                        if not name or not email:
-                            failed += 1
-                            continue
-                        qr_value = generate_qr_value()
-                        try:
-                            cursor.execute(
-                                'INSERT INTO students (course_id, name, email, year_level, qr_data) VALUES (%s, %s, %s, %s, %s)',
-                                (course_id, name, email, year_level, qr_value),
-                            )
-                            conn.commit()
-                            send_qr_email(name, course['name'], qr_value, email)
-                            inserted += 1
-                        except Exception:
-                            failed += 1
-            finally:
-                conn.close()
-            flash(f'CSV upload complete: {inserted} students added, {failed} failed.')
-        else:
-            flash('Course selection and CSV file are required.')
-        return redirect(url_for('upload_csv'))
-    conn = get_db_connection()
+@app.route('/courses/<int:id>', methods=['DELETE'])
+@token_required
+def delete_course(current_user, id):
     try:
-        with conn.cursor() as cursor:
-            cursor.execute('SELECT id, name FROM courses WHERE teacher_id = %s', (teacher_id,))
-            course_list = cursor.fetchall()
-    finally:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT COUNT(*) as count FROM students WHERE course_id = %s', (id,))
+        student_count = cursor.fetchone()['count']
+        
+        if student_count > 0:
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Cannot delete course with enrolled students'}), 400
+        
+        cursor.execute('DELETE FROM courses WHERE id = %s', (id,))
+        conn.commit()
+        
+        cursor.close()
         conn.close()
-    return render_template('upload_csv.html', courses=course_list)
-
-
-@app.route('/attendance')
-@login_required
-def attendance():
-    teacher_id = fetch_active_teacher_id()
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                'SELECT a.id, s.name AS student_name, c.name AS course_name, a.date, a.time_in, a.time_out, a.status '
-                'FROM attendance a '
-                'JOIN students s ON a.student_id = s.id '
-                'JOIN courses c ON s.course_id = c.id '
-                'WHERE c.teacher_id = %s ORDER BY a.date DESC, a.time_in DESC LIMIT 120',
-                (teacher_id,),
-            )
-            attendance_records = cursor.fetchall()
-    finally:
-        conn.close()
-    return render_template('attendance.html', attendance_records=attendance_records)
-
-
-@app.route('/attendance/<int:attendance_id>/edit', methods=['GET', 'POST'])
-@login_required
-def edit_attendance(attendance_id):
-    teacher_id = fetch_active_teacher_id()
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                'SELECT a.id, a.time_in, a.time_out, a.status, s.name AS student_name, c.name AS course_name '
-                'FROM attendance a '
-                'JOIN students s ON a.student_id = s.id '
-                'JOIN courses c ON s.course_id = c.id '
-                'WHERE a.id = %s AND c.teacher_id = %s',
-                (attendance_id, teacher_id),
-            )
-            record = cursor.fetchone()
-            if not record:
-                return redirect(url_for('attendance'))
-            if request.method == 'POST':
-                time_out = request.form.get('time_out') or None
-                status = request.form.get('status', 'present')
-                cursor.execute('UPDATE attendance SET time_out = %s, status = %s WHERE id = %s', (time_out, status, attendance_id))
-                conn.commit()
-                flash('Attendance record updated.')
-                return redirect(url_for('attendance'))
-    finally:
-        conn.close()
-    return render_template('attendance_edit.html', record=record)
-
-
-@app.route('/attendance/<int:attendance_id>/delete', methods=['POST'])
-@login_required
-def delete_attendance(attendance_id):
-    teacher_id = fetch_active_teacher_id()
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                'DELETE a FROM attendance a '
-                'JOIN students s ON a.student_id = s.id '
-                'JOIN courses c ON s.course_id = c.id '
-                'WHERE a.id = %s AND c.teacher_id = %s',
-                (attendance_id, teacher_id),
-            )
-            conn.commit()
-    finally:
-        conn.close()
-    flash('Attendance record deleted.')
-    return redirect(url_for('attendance'))
-
-
-@app.route('/scanner')
-@login_required
-def scanner_page():
-    return render_template('scanner.html')
-
+        
+        return jsonify({'message': 'Course deleted successfully'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/scan', methods=['POST'])
-@login_required
-def scan_qr():
-    data = request.get_json(silent=True) or {}
-    qr_data = data.get('qr_data', '').strip()
-    if not qr_data:
-        return jsonify({'error': 'QR data is required.'}), 400
-    teacher_id = fetch_active_teacher_id()
-    conn = get_db_connection()
+@token_required
+def scan_qr(current_user):
     try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                'SELECT s.id, s.name, s.year_level, c.name AS course_name '
-                'FROM students s '
-                'JOIN courses c ON s.course_id = c.id '
-                'WHERE s.qr_data = %s AND c.teacher_id = %s',
-                (qr_data, teacher_id),
-            )
-            student = cursor.fetchone()
-            if not student:
-                return jsonify({'error': 'Student not found.'}), 404
-            today = date.today()
-            cursor.execute(
-                'SELECT id, time_in, time_out, date, status '
-                'FROM attendance WHERE student_id = %s AND date = %s ORDER BY id DESC LIMIT 1',
-                (student['id'], today),
-            )
-            attendance_record = cursor.fetchone()
-            if attendance_record:
-                if attendance_record['time_out'] is None:
-                    return jsonify(
-                        {
-                            'message': 'Attendance already recorded for today.',
-                            'student': student,
-                            'attendance': attendance_record,
-                        }
-                    ), 200
-                return jsonify(
-                    {
-                        'message': 'Attendance has already been registered today.',
-                        'student': student,
-                        'attendance': attendance_record,
-                    }
-                ), 200
-            now = datetime.utcnow()
-            cursor.execute(
-                'INSERT INTO attendance (student_id, time_in, date, status) VALUES (%s, %s, %s, %s)',
-                (student['id'], now, today, 'present'),
-            )
+        data = request.get_json()
+        qr_data = data.get('qr_data', '')
+        
+        if not qr_data:
+            return jsonify({'error': 'QR data is required'}), 400
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT s.id, s.name, s.course_id, c.name as course_name
+            FROM students s
+            LEFT JOIN courses c ON s.course_id = c.id
+            WHERE s.qr_data = %s
+        ''', (qr_data,))
+        
+        student = cursor.fetchone()
+        
+        if not student:
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Student not found'}), 404
+        
+        today = datetime.date.today()
+        now = datetime.datetime.now().time()
+        
+        cursor.execute('''
+            SELECT * FROM attendance 
+            WHERE student_id = %s AND date = %s
+        ''', (student['id'], today))
+        
+        existing_record = cursor.fetchone()
+        
+        if existing_record:
+            if existing_record['time_in'] and not existing_record['time_out']:
+                cursor.execute('''
+                    UPDATE attendance 
+                    SET time_out = %s, status = "present"
+                    WHERE id = %s
+                ''', (now, existing_record['id']))
+                conn.commit()
+                
+                cursor.close()
+                conn.close()
+                
+                return jsonify({
+                    'student_name': student['name'],
+                    'course_name': student['course_name'],
+                    'status': 'time_out_recorded',
+                    'message': 'Time out recorded successfully'
+                }), 200
+            else:
+                cursor.close()
+                conn.close()
+                return jsonify({
+                    'student_name': student['name'],
+                    'course_name': student['course_name'],
+                    'status': 'already_complete',
+                    'message': 'Attendance already recorded for today'
+                }), 200
+        else:
+            cursor.execute('''
+                INSERT INTO attendance (student_id, course_id, date, time_in, status)
+                VALUES (%s, %s, %s, %s, "present")
+            ''', (student['id'], student['course_id'], today, now))
+            
             conn.commit()
-            attendance_id = cursor.lastrowid
-            cursor.execute('SELECT id, time_in, time_out, date, status FROM attendance WHERE id = %s', (attendance_id,))
-            attendance_record = cursor.fetchone()
-    finally:
+            
+            cursor.close()
+            conn.close()
+            
+            return jsonify({
+                'student_name': student['name'],
+                'course_name': student['course_name'],
+                'status': 'time_in_recorded',
+                'message': 'Time in recorded successfully'
+            }), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/upload-csv', methods=['POST'])
+@token_required
+def upload_csv(current_user):
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        if not file.filename.endswith('.csv'):
+            return jsonify({'error': 'File must be a CSV'}), 400
+        
+        import io
+        stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+        csv_reader = csv.DictReader(stream)
+        
+        created_students = []
+        failed_students = []
+        
+        qr_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'frontend', 'static', 'images', 'qrcodes')
+        os.makedirs(qr_folder, exist_ok=True)
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        for row in csv_reader:
+            try:
+                name = row.get('name', '').strip()
+                email = row.get('email', '').strip()
+                course_id = row.get('course_id', '').strip()
+                
+                if not name or not email:
+                    failed_students.append({'data': row, 'error': 'Missing name or email'})
+                    continue
+                
+                if course_id:
+                    course_id = int(course_id)
+                else:
+                    course_id = None
+                
+                qr_data = str(uuid.uuid4())
+                qr_filename = f"{qr_data}.png"
+                qr_filepath = os.path.join(qr_folder, qr_filename)
+                
+                img = qrcode.make(qr_data)
+                img.save(qr_filepath)
+                
+                qr_image_path = f"/static/images/qrcodes/{qr_filename}"
+                
+                cursor.execute('''
+                    INSERT INTO students (name, email, course_id, qr_data, qr_image_path)
+                    VALUES (%s, %s, %s, %s, %s)
+                ''', (name, email, course_id, qr_data, qr_image_path))
+                
+                conn.commit()
+                
+                student_id = cursor.lastrowid
+                
+                created_students.append({
+                    'id': student_id,
+                    'name': name,
+                    'email': email,
+                    'course_id': course_id,
+                    'qr_data': qr_data,
+                    'qr_image_path': qr_image_path
+                })
+                
+                if app.config['MAIL_USERNAME'] and email:
+                    try:
+                        msg = Message(
+                            subject='Your QR Code for Attendance System',
+                            recipients=[email],
+                            body=f'Hello {name},\n\nYour QR code has been generated for the attendance system. Please find it attached.',
+                            sender=app.config['MAIL_USERNAME']
+                        )
+                        
+                        with open(qr_filepath, 'rb') as f:
+                            msg.attach(qr_filename, 'image/png', f.read())
+                        
+                        mail.send(msg)
+                    except Exception as e:
+                        failed_students.append({'data': row, 'error': f'Email failed: {str(e)}'})
+                
+            except Exception as e:
+                failed_students.append({'data': row, 'error': str(e)})
+        
+        cursor.close()
         conn.close()
-    return jsonify({'message': 'Attendance recorded.', 'student': student, 'attendance': attendance_record}), 201
-
-
-@app.route('/health', methods=['GET'])
-def health_check():
-    return jsonify({'status': 'ok'})
-
+        
+        return jsonify({
+            'created': created_students,
+            'failed': failed_students,
+            'message': f'Successfully created {len(created_students)} students, {len(failed_students)} failed'
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    ensure_admin_teacher()
-    app.run(host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5000)
