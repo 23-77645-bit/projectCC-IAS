@@ -1,43 +1,94 @@
+-- MariaDB Schema for QR Code Student Identification and Attendance System
+-- Batangas State University ARASOF-Nasugbu
+
 CREATE DATABASE IF NOT EXISTS attendance_db;
 USE attendance_db;
 
-CREATE TABLE IF NOT EXISTS teachers (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(255) NOT NULL UNIQUE,
-    password VARCHAR(255) NOT NULL,
-    email VARCHAR(255) NOT NULL UNIQUE,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+-- Teachers table
+CREATE TABLE teachers (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_email (email)
 );
 
-CREATE TABLE IF NOT EXISTS courses (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+-- Courses table
+CREATE TABLE courses (
+    id INT PRIMARY KEY AUTO_INCREMENT,
     teacher_id INT NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE
+    name VARCHAR(100) NOT NULL,
+    section VARCHAR(50) NOT NULL,
+    schedule VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE,
+    INDEX idx_teacher_id (teacher_id)
 );
 
-CREATE TABLE IF NOT EXISTS students (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+-- Students table
+CREATE TABLE students (
+    id INT PRIMARY KEY AUTO_INCREMENT,
     course_id INT NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) NOT NULL,
-    year_level VARCHAR(50),
-    qr_data VARCHAR(255) NOT NULL UNIQUE,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(100) NOT NULL,
+    qr_data VARCHAR(100) NOT NULL UNIQUE,
+    qr_image_path VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+    INDEX idx_qr_data (qr_data),
+    INDEX idx_email (email)
 );
 
-CREATE TABLE IF NOT EXISTS attendance (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+-- Attendance table
+CREATE TABLE attendance (
+    id INT PRIMARY KEY AUTO_INCREMENT,
     student_id INT NOT NULL,
-    time_in DATETIME NOT NULL,
-    time_out DATETIME DEFAULT NULL,
+    course_id INT NOT NULL,
     date DATE NOT NULL,
-    status VARCHAR(50) NOT NULL DEFAULT 'present',
-    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+    time_in TIME,
+    time_out TIME,
+    status ENUM('present', 'absent') NOT NULL DEFAULT 'absent',
+    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+    INDEX idx_student_date (student_id, date),
+    INDEX idx_course_date (course_id, date)
 );
 
-INSERT IGNORE INTO teachers (username, password, email) VALUES
-('admin', 'admin123', 'admin@attendance.local');
+-- Seed data for testing
+
+-- Insert teachers
+INSERT INTO teachers (name, email, password_hash) VALUES
+('Prof. Juan Dela Cruz', 'juan.delacruz@batstate-u.edu.ph', 'hashed_password_1'),
+('Prof. Maria Santos', 'maria.santos@batstate-u.edu.ph', 'hashed_password_2'),
+('Prof. Pedro Reyes', 'pedro.reyes@batstate-u.edu.ph', 'hashed_password_3');
+
+-- Insert courses
+INSERT INTO courses (teacher_id, name, section, schedule) VALUES
+(1, 'Introduction to Programming', 'BSIT-101', 'MWF 8:00 AM - 9:30 AM'),
+(1, 'Data Structures', 'BSIT-201', 'TTh 10:00 AM - 11:30 AM'),
+(2, 'Database Management', 'BSIT-301', 'MWF 1:00 PM - 2:30 PM'),
+(2, 'Web Development', 'BSIT-302', 'TTh 2:00 PM - 3:30 PM'),
+(3, 'Software Engineering', 'BSIT-401', 'MWF 10:00 AM - 11:30 AM'),
+(3, 'Capstone Project', 'BSIT-402', 'TTh 8:00 AM - 9:30 AM');
+
+-- Insert students (3 per course)
+INSERT INTO students (course_id, name, email, qr_data, qr_image_path) VALUES
+(1, 'Alice Johnson', 'alice.johnson@student.batstate-u.edu.ph', 'STU-BSIT101-001', '/static/qr/stu_001.png'),
+(1, 'Bob Martinez', 'bob.martinez@student.batstate-u.edu.ph', 'STU-BSIT101-002', '/static/qr/stu_002.png'),
+(1, 'Carol Garcia', 'carol.garcia@student.batstate-u.edu.ph', 'STU-BSIT101-003', '/static/qr/stu_003.png'),
+(2, 'David Lopez', 'david.lopez@student.batstate-u.edu.ph', 'STU-BSIT201-001', '/static/qr/stu_004.png'),
+(2, 'Eva Rodriguez', 'eva.rodriguez@student.batstate-u.edu.ph', 'STU-BSIT201-002', '/static/qr/stu_005.png'),
+(2, 'Frank Torres', 'frank.torres@student.batstate-u.edu.ph', 'STU-BSIT201-003', '/static/qr/stu_006.png'),
+(3, 'Grace Flores', 'grace.flores@student.batstate-u.edu.ph', 'STU-BSIT301-001', '/static/qr/stu_007.png'),
+(3, 'Henry Ramos', 'henry.ramos@student.batstate-u.edu.ph', 'STU-BSIT301-002', '/static/qr/stu_008.png'),
+(3, 'Ivy Castro', 'ivy.castro@student.batstate-u.edu.ph', 'STU-BSIT301-003', '/static/qr/stu_009.png'),
+(4, 'Jack Bautista', 'jack.bautista@student.batstate-u.edu.ph', 'STU-BSIT302-001', '/static/qr/stu_010.png'),
+(4, 'Karen Diaz', 'karen.diaz@student.batstate-u.edu.ph', 'STU-BSIT302-002', '/static/qr/stu_011.png'),
+(4, 'Leo Mendoza', 'leo.mendoza@student.batstate-u.edu.ph', 'STU-BSIT302-003', '/static/qr/stu_012.png'),
+(5, 'Mia Navarro', 'mia.navarro@student.batstate-u.edu.ph', 'STU-BSIT401-001', '/static/qr/stu_013.png'),
+(5, 'Noel Pascual', 'noel.pascual@student.batstate-u.edu.ph', 'STU-BSIT401-002', '/static/qr/stu_014.png'),
+(5, 'Olivia Cruz', 'olivia.cruz@student.batstate-u.edu.ph', 'STU-BSIT401-003', '/static/qr/stu_015.png'),
+(6, 'Paul Villanueva', 'paul.villanueva@student.batstate-u.edu.ph', 'STU-BSIT402-001', '/static/qr/stu_016.png'),
+(6, 'Quinn Aguilar', 'quinn.aguilar@student.batstate-u.edu.ph', 'STU-BSIT402-002', '/static/qr/stu_017.png'),
+(6, 'Rosa Santiago', 'rosa.santiago@student.batstate-u.edu.ph', 'STU-BSIT402-003', '/static/qr/stu_018.png');
