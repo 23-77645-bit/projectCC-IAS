@@ -57,11 +57,17 @@ async function loadCoursesTable() {
 document.getElementById('addCourseForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = e.target;
+    const submitBtn = form.querySelector('button[type="submit"]');
     const data = {
         name: form.name.value,
         section: form.section.value,
         schedule: form.schedule.value
     };
+    
+    // Add loading state
+    const originalText = submitBtn.textContent;
+    submitBtn.textContent = 'Creating...';
+    submitBtn.disabled = true;
 
     try {
         const res = await fetch('/api/courses', {
@@ -81,6 +87,9 @@ document.getElementById('addCourseForm')?.addEventListener('submit', async (e) =
         }
     } catch (err) {
         showFlash('Error creating course', 'danger');
+    } finally {
+        submitBtn.textContent = originalText;
+        submitBtn.disabled = false;
     }
 });
 
@@ -99,11 +108,18 @@ function openEditModal(courseId) {
 document.getElementById('editCourseForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const courseId = document.getElementById('editCourseId').value;
+    const form = e.target;
+    const submitBtn = form.querySelector('button[type="submit"]');
     const data = {
         name: document.getElementById('editName').value,
         section: document.getElementById('editSection').value,
         schedule: document.getElementById('editSchedule').value
     };
+    
+    // Add loading state
+    const originalText = submitBtn.textContent;
+    submitBtn.textContent = 'Updating...';
+    submitBtn.disabled = true;
 
     try {
         const res = await fetch(`/api/courses/${courseId}`, {
@@ -122,6 +138,9 @@ document.getElementById('editCourseForm')?.addEventListener('submit', async (e) 
         }
     } catch (err) {
         showFlash('Error updating course', 'danger');
+    } finally {
+        submitBtn.textContent = originalText;
+        submitBtn.disabled = false;
     }
 });
 
