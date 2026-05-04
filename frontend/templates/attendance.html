@@ -1,45 +1,60 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="card">
-  <div class="card-header">
-    <h5 class="card-title mb-0">Attendance Records</h5>
-  </div>
-  <div class="card-body">
-    <div class="table-responsive">
-      <table class="table table-hover">
-        <thead>
-          <tr>
-            <th>Student</th>
-            <th>Course</th>
-            <th>Date</th>
-            <th>Time In</th>
-            <th>Time Out</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for record in attendance_records %}
-          <tr>
-            <td>{{ record.student_name }}</td>
-            <td>{{ record.course_name }}</td>
-            <td>{{ record.date }}</td>
-            <td>{{ record.time_in }}</td>
-            <td>{{ record.time_out or '—' }}</td>
-            <td>
-              <span class="badge {% if record.status == 'present' %}bg-success{% else %}bg-warning{% endif %}">{{ record.status }}</span>
-            </td>
-            <td>
-              <a href="/attendance/{{ record.id }}/edit" class="btn btn-sm btn-outline-primary me-1">Edit</a>
-              <form method="post" action="/attendance/{{ record.id }}/delete" class="d-inline">
-                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure?')">Delete</button>
-              </form>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0 fw-bold">Attendance Records</h2>
+    <button class="btn btn-outline-secondary" id="exportCsvBtn">Export CSV</button>
 </div>
+
+<div id="flash-container"></div>
+
+<div class="card mb-4" style="border: 1px solid #eee; border-radius: 8px;">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Date</label>
+                <input type="date" class="form-control" id="filterDate">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Course</label>
+                <select class="form-select" id="filterCourse">
+                    <option value="">All Courses</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Status</label>
+                <select class="form-select" id="filterStatus">
+                    <option value="">All</option>
+                    <option value="present">Present</option>
+                    <option value="absent">Absent</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button class="btn btn-primary w-100" id="applyFilterBtn">Apply Filter</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="table-responsive bg-white rounded" style="border: 1px solid #eee;">
+    <table class="table table-hover mb-0">
+        <thead>
+            <tr>
+                <th>Student Name</th>
+                <th>Course</th>
+                <th>Date</th>
+                <th>Time In</th>
+                <th>Time Out</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="attendance-table-body">
+        </tbody>
+        <tfoot id="attendance-summary" class="table-light">
+        </tfoot>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/attendance.js"></script>
 {% endblock %}
