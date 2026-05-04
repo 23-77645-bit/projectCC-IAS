@@ -3,12 +3,14 @@ import csv
 import uuid
 import jwt
 import datetime
-import qrcode
 from functools import wraps
-from flask import Flask, request, jsonify, redirect, session, send_from_directory
-from flask_mail import Mail, Message
+from flask import Flask, request, jsonify, redirect, session
+from flask_mail import Mail
 import pymysql
 from dotenv import load_dotenv
+
+from utils.qr_generator import generate_qr
+from utils.email_sender import send_qr_email
 
 load_dotenv()
 
@@ -165,16 +167,13 @@ def create_student(current_user):
             return jsonify({'error': 'Name and email are required'}), 400
         
         qr_data = str(uuid.uuid4())
-        qr_filename = f"{qr_data}.png"
-        qr_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'frontend', 'static', 'images', 'qrcodes')
-        qr_filepath = os.path.join(qr_folder, qr_filename)
         
-        os.makedirs(qr_folder, exist_ok=True)
+        # Generate QR code using utility
+        qr_filepath = generate_qr(None, name, qr_data)
+        if not qr_filepath:
+            return jsonify({'error': 'Failed to generate QR code'}), 500
         
-        img = qrcode.make(qr_data)
-        img.save(qr_filepath)
-        
-        qr_image_path = f"/static/images/qrcodes/{qr_filename}"
+        qr_image_path = f"/static/images/qrcodes/{qr_data}.png"
         
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -189,6 +188,9 @@ def create_student(current_user):
         
         cursor.close()
         conn.close()
+        
+        # Send QR code via email
+        send_qr_email(name, email, qr_filepath)
         
         return jsonify({'id': student_id, 'name': name, 'email': email, 'course_id': course_id, 'qr_data': qr_data, 'qr_image_path': qr_image_path}), 201
     except Exception as e:
@@ -516,9 +518,6 @@ def upload_csv(current_user):
         created_students = []
         failed_students = []
         
-        qr_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'frontend', 'static', 'images', 'qrcodes')
-        os.makedirs(qr_folder, exist_ok=True)
-        
         conn = get_db_connection()
         cursor = conn.cursor()
         
@@ -538,13 +537,14 @@ def upload_csv(current_user):
                     course_id = None
                 
                 qr_data = str(uuid.uuid4())
-                qr_filename = f"{qr_data}.png"
-                qr_filepath = os.path.join(qr_folder, qr_filename)
                 
-                img = qrcode.make(qr_data)
-                img.save(qr_filepath)
+                # Generate QR code using utility
+                qr_filepath = generate_qr(None, name, qr_data)
+                if not qr_filepath:
+                    failed_students.append({'data': row, 'error': 'Failed to generate QR code'})
+                    continue
                 
-                qr_image_path = f"/static/images/qrcodes/{qr_filename}"
+                qr_image_path = f"/static/images/qrcodes/{qr_data}.png"
                 
                 cursor.execute('''
                     INSERT INTO students (name, email, course_id, qr_data, qr_image_path)
@@ -564,21 +564,8 @@ def upload_csv(current_user):
                     'qr_image_path': qr_image_path
                 })
                 
-                if app.config['MAIL_USERNAME'] and email:
-                    try:
-                        msg = Message(
-                            subject='Your QR Code for Attendance System',
-                            recipients=[email],
-                            body=f'Hello {name},\n\nYour QR code has been generated for the attendance system. Please find it attached.',
-                            sender=app.config['MAIL_USERNAME']
-                        )
-                        
-                        with open(qr_filepath, 'rb') as f:
-                            msg.attach(qr_filename, 'image/png', f.read())
-                        
-                        mail.send(msg)
-                    except Exception as e:
-                        failed_students.append({'data': row, 'error': f'Email failed: {str(e)}'})
+                # Send QR code via email using utility
+                send_qr_email(name, email, qr_filepath)
                 
             except Exception as e:
                 failed_students.append({'data': row, 'error': str(e)})
