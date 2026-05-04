@@ -1,59 +1,88 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="row">
-  <div class="col-lg-5">
-    <div class="card">
-      <div class="card-header">
-        <h5 class="card-title mb-0">Create Course</h5>
-      </div>
-      <div class="card-body">
-        <form method="post" action="/courses">
-          <div class="mb-3">
-            <label for="name" class="form-label">Course Name</label>
-            <input type="text" class="form-control" id="name" name="name" required>
-          </div>
-          <div class="mb-3">
-            <label for="description" class="form-label">Description</label>
-            <textarea class="form-control" id="description" name="description" rows="3"></textarea>
-          </div>
-          <button type="submit" class="btn btn-primary">Add Course</button>
-        </form>
-      </div>
-    </div>
-  </div>
-  <div class="col-lg-7">
-    <div class="card">
-      <div class="card-header">
-        <h5 class="card-title mb-0">Your Courses</h5>
-      </div>
-      <div class="card-body">
-        <div class="table-responsive">
-          <table class="table table-hover">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Description</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for course in courses %}
-              <tr>
-                <td>{{ course.name }}</td>
-                <td>{{ course.description or '—' }}</td>
-                <td>
-                  <a href="/courses/{{ course.id }}/edit" class="btn btn-sm btn-outline-primary me-1">Edit</a>
-                  <form method="post" action="/courses/{{ course.id }}/delete" class="d-inline">
-                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure?')">Delete</button>
-                  </form>
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0 fw-bold">Courses</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCourseModal">Add Course</button>
 </div>
+
+<div id="flash-container"></div>
+
+<div class="table-responsive bg-white rounded" style="border: 1px solid #eee;">
+    <table class="table table-hover mb-0">
+        <thead>
+            <tr>
+                <th>Course Name</th>
+                <th>Section</th>
+                <th>Schedule</th>
+                <th>Student Count</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="courses-table-body">
+        </tbody>
+    </table>
+</div>
+
+<!-- Add Course Modal -->
+<div class="modal fade" id="addCourseModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Add Course</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addCourseForm">
+                    <div class="mb-3">
+                        <label class="form-label">Course Name</label>
+                        <input type="text" class="form-control" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Section</label>
+                        <input type="text" class="form-control" name="section" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Schedule</label>
+                        <input type="text" class="form-control" name="schedule" placeholder="e.g., Mon/Wed 10:00-11:30" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Create Course</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Course Modal -->
+<div class="modal fade" id="editCourseModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Edit Course</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editCourseForm">
+                    <input type="hidden" id="editCourseId">
+                    <div class="mb-3">
+                        <label class="form-label">Course Name</label>
+                        <input type="text" class="form-control" id="editName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Section</label>
+                        <input type="text" class="form-control" id="editSection" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Schedule</label>
+                        <input type="text" class="form-control" id="editSchedule" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Update Course</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/courses.js"></script>
 {% endblock %}

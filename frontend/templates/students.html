@@ -1,79 +1,123 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="row">
-  <div class="col-lg-5">
-    <div class="card">
-      <div class="card-header">
-        <h5 class="card-title mb-0">Add Student</h5>
-      </div>
-      <div class="card-body">
-        <form method="post" action="/students">
-          <div class="mb-3">
-            <label for="name" class="form-label">Student Name</label>
-            <input type="text" class="form-control" id="name" name="name" required>
-          </div>
-          <div class="mb-3">
-            <label for="email" class="form-label">Email</label>
-            <input type="email" class="form-control" id="email" name="email" required>
-          </div>
-          <div class="mb-3">
-            <label for="year_level" class="form-label">Year Level</label>
-            <input type="text" class="form-control" id="year_level" name="year_level">
-          </div>
-          <div class="mb-3">
-            <label for="course_id" class="form-label">Course</label>
-            <select class="form-select" id="course_id" name="course_id" required>
-              <option value="">Select a course</option>
-              {% for course in courses %}
-              <option value="{{ course.id }}">{{ course.name }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <button type="submit" class="btn btn-primary">Create Student</button>
-        </form>
-        <div class="mt-3">
-          <a href="/students/upload-csv" class="btn btn-outline-info btn-sm">Upload CSV</a>
-        </div>
-      </div>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0 fw-bold">Students</h2>
+    <div>
+        <button class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#addStudentModal">Add Student</button>
+        <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#uploadCsvModal">Upload CSV</button>
     </div>
-  </div>
-  <div class="col-lg-7">
-    <div class="card">
-      <div class="card-header">
-        <h5 class="card-title mb-0">Student Directory</h5>
-      </div>
-      <div class="card-body">
-        <div class="table-responsive">
-          <table class="table table-hover">
-            <thead>
-              <tr>
+</div>
+
+<div id="flash-container"></div>
+
+<div class="table-responsive bg-white rounded" style="border: 1px solid #eee;">
+    <table class="table table-hover mb-0">
+        <thead>
+            <tr>
                 <th>Name</th>
                 <th>Email</th>
                 <th>Course</th>
                 <th>QR Code</th>
                 <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for student in students %}
-              <tr>
-                <td>{{ student.name }}</td>
-                <td>{{ student.email }}</td>
-                <td>{{ student.course_name }}</td>
-                <td><code class="text-muted small">{{ student.qr_data }}</code></td>
-                <td>
-                  <a href="/students/{{ student.id }}/edit" class="btn btn-sm btn-outline-primary me-1">Edit</a>
-                  <form method="post" action="/students/{{ student.id }}/delete" class="d-inline">
-                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure?')">Delete</button>
-                  </form>
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
+            </tr>
+        </thead>
+        <tbody id="students-table-body">
+        </tbody>
+    </table>
 </div>
+
+<!-- Add Student Modal -->
+<div class="modal fade" id="addStudentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Add Student</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addStudentForm">
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <input type="text" class="form-control" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-control" name="email" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Course</label>
+                        <select class="form-select" name="course_id" id="addCourseSelect" required>
+                            <option value="">Select Course</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Create Student</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Upload CSV Modal -->
+<div class="modal fade" id="uploadCsvModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Upload CSV</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="uploadCsvForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label class="form-label">CSV File</label>
+                        <input type="file" class="form-control" name="file" accept=".csv" required>
+                        <div class="form-text">Columns: name, email, course_id</div>
+                    </div>
+                    <div id="uploadProgress" class="mb-3 d-none">
+                        <div class="progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+                        </div>
+                        <small class="text-muted mt-1 d-block">Processing...</small>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Upload</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Student Modal -->
+<div class="modal fade" id="editStudentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Edit Student</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editStudentForm">
+                    <input type="hidden" id="editStudentId">
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <input type="text" class="form-control" id="editName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-control" id="editEmail" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Course</label>
+                        <select class="form-select" id="editCourseSelect" required>
+                            <option value="">Select Course</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Update Student</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/students.js"></script>
 {% endblock %}
