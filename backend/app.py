@@ -4,7 +4,7 @@ import uuid
 import jwt
 import datetime
 from functools import wraps
-from flask import Flask, request, jsonify, redirect, session
+from flask import Flask, request, jsonify, redirect, session, render_template, send_file, make_response
 from flask_mail import Mail
 import pymysql
 from dotenv import load_dotenv
@@ -59,12 +59,17 @@ def token_required(f):
         return f(current_user, *args, **kwargs)
     return decorated
 
-@app.route('/login', methods=['POST'])
+@app.route('/login', methods=['GET', 'POST'])
 def login():
+    if request.method == 'GET':
+        return render_template('login.html')
     try:
         data = request.get_json()
         username = data.get('username', '')
         password = data.get('password', '')
+        
+        if not username or not password:
+            return jsonify({'error': 'Username and password are required'}), 400
         
         admin_username = os.getenv('ADMIN_USERNAME', 'admin')
         admin_password = os.getenv('ADMIN_PASSWORD', 'admin123')
@@ -580,6 +585,80 @@ def upload_csv(current_user):
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# HTML Page Routes
+@app.route('/dashboard')
+@token_required
+def dashboard_page(current_user):
+    return render_template('dashboard.html')
+
+@app.route('/scanner')
+@token_required
+def scanner_page(current_user):
+    return render_template('scanner.html')
+
+@app.route('/students')
+@token_required
+def students_page(current_user):
+    return render_template('students.html')
+
+@app.route('/courses')
+@token_required
+def courses_page(current_user):
+    return render_template('courses.html')
+
+@app.route('/attendance')
+@token_required
+def attendance_page(current_user):
+    return render_template('attendance.html')
+
+@app.route('/attendance/export', methods=['GET'])
+@token_required
+def export_attendance(current_user):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT s.name as student_name, c.name as course_name, a.date, a.time_in, a.time_out, a.status
+            FROM attendance a
+            JOIN students s ON a.student_id = s.id
+            JOIN courses c ON a.course_id = c.id
+            ORDER BY a.date DESC, a.time_in DESC
+        ''')
+        
+        records = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        import io
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['Student Name', 'Course', 'Date', 'Time In', 'Time Out', 'Status'])
+        
+        for record in records:
+            time_in = record['time_in'].strftime('%H:%M:%S') if record['time_in'] else ''
+            time_out = record['time_out'].strftime('%H:%M:%S') if record['time_out'] else ''
+            writer.writerow([
+                record['student_name'],
+                record['course_name'],
+                record['date'].strftime('%Y-%m-%d'),
+                time_in,
+                time_out,
+                record['status']
+            ])
+        
+        output.seek(0)
+        
+        response = make_response(output.getvalue())
+        response.headers['Content-Disposition'] = 'attachment; filename=attendance_export.csv'
+        response.headers['Content-type'] = 'text/csv'
+        
+        return response
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
