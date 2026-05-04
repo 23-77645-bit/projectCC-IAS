@@ -164,12 +164,19 @@ def get_students(current_user):
 def create_student(current_user):
     try:
         data = request.get_json()
-        name = data.get('name', '')
-        email = data.get('email', '')
+        name = data.get('name', '').strip() if data.get('name') else ''
+        email = data.get('email', '').strip() if data.get('email') else ''
         course_id = data.get('course_id')
         
-        if not name or not email:
-            return jsonify({'error': 'Name and email are required'}), 400
+        # Validation
+        if not name:
+            return jsonify({'error': 'Name is required'}), 400
+        if not email:
+            return jsonify({'error': 'Email is required'}), 400
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+            return jsonify({'error': 'Invalid email format'}), 400
+        if not course_id:
+            return jsonify({'error': 'Course is required'}), 400
         
         qr_data = str(uuid.uuid4())
         
@@ -182,6 +189,13 @@ def create_student(current_user):
         
         conn = get_db_connection()
         cursor = conn.cursor()
+        
+        # Check if email already exists
+        cursor.execute('SELECT id FROM students WHERE email = %s', (email,))
+        if cursor.fetchone():
+            cursor.close()
+            conn.close()
+            return jsonify({'error': 'Email already registered'}), 400
         
         cursor.execute('''
             INSERT INTO students (name, email, course_id, qr_data, qr_image_path)
@@ -199,7 +213,8 @@ def create_student(current_user):
         
         return jsonify({'id': student_id, 'name': name, 'email': email, 'course_id': course_id, 'qr_data': qr_data, 'qr_image_path': qr_image_path}), 201
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error creating student: {str(e)}")
+        return jsonify({'error': 'Failed to create student'}), 500
 
 @app.route('/students/<int:id>', methods=['PUT'])
 @token_required
@@ -310,11 +325,12 @@ def get_courses(current_user):
 def create_course(current_user):
     try:
         data = request.get_json()
-        name = data.get('name', '')
-        section = data.get('section', '')
-        schedule = data.get('schedule', '')
+        name = data.get('name', '').strip() if data.get('name') else ''
+        section = data.get('section', '').strip() if data.get('section') else ''
+        schedule = data.get('schedule', '').strip() if data.get('schedule') else ''
         teacher_id = data.get('teacher_id')
         
+        # Validation
         if not name:
             return jsonify({'error': 'Course name is required'}), 400
         
@@ -337,7 +353,8 @@ def create_course(current_user):
         
         return jsonify(new_course), 201
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error creating course: {str(e)}")
+        return jsonify({'error': 'Failed to create course'}), 500
 
 @app.route('/courses/<int:id>', methods=['PUT'])
 @token_required
@@ -532,8 +549,15 @@ def upload_csv(current_user):
                 email = row.get('email', '').strip()
                 course_id = row.get('course_id', '').strip()
                 
-                if not name or not email:
-                    failed_students.append({'data': row, 'error': 'Missing name or email'})
+                # Validation
+                if not name:
+                    failed_students.append({'data': row, 'error': 'Name is required'})
+                    continue
+                if not email:
+                    failed_students.append({'data': row, 'error': 'Email is required'})
+                    continue
+                if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+                    failed_students.append({'data': row, 'error': 'Invalid email format'})
                     continue
                 
                 if course_id:
@@ -584,7 +608,8 @@ def upload_csv(current_user):
             'message': f'Successfully created {len(created_students)} students, {len(failed_students)} failed'
         }), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error uploading CSV: {str(e)}")
+        return jsonify({'error': 'Failed to upload CSV'}), 500
 
 
 # HTML Page Routes

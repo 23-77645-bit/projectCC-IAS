@@ -109,6 +109,15 @@ function onScanSuccess(decodedText) {
 
 function onScanError(errorMessage) {
     console.warn('Scanner warning:', errorMessage);
+    // Show error in UI but don't stop scanner
+    const resultEl = document.getElementById('scan-result');
+    if (resultEl && !scanBusy) {
+        resultEl.innerHTML = `
+            <div class="text-center py-4">
+                <p class="text-muted small">Waiting for valid QR code...</p>
+            </div>
+        `;
+    }
 }
 
 function initScanner() {

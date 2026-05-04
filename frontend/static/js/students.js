@@ -76,6 +76,12 @@ document.getElementById('addStudentForm')?.addEventListener('submit', async (e) 
     const form = e.target;
     const formData = new FormData(form);
     const data = Object.fromEntries(formData);
+    const submitBtn = form.querySelector('button[type="submit"]');
+    
+    // Add loading state
+    const originalText = submitBtn.textContent;
+    submitBtn.textContent = 'Creating...';
+    submitBtn.disabled = true;
 
     try {
         const res = await fetch('/api/students', {
@@ -95,6 +101,9 @@ document.getElementById('addStudentForm')?.addEventListener('submit', async (e) 
         }
     } catch (err) {
         showFlash('Error creating student', 'danger');
+    } finally {
+        submitBtn.textContent = originalText;
+        submitBtn.disabled = false;
     }
 });
 
@@ -143,11 +152,18 @@ function openEditModal(studentId) {
 document.getElementById('editStudentForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const studentId = document.getElementById('editStudentId').value;
+    const form = e.target;
+    const submitBtn = form.querySelector('button[type="submit"]');
     const data = {
         name: document.getElementById('editName').value,
         email: document.getElementById('editEmail').value,
         course_id: document.getElementById('editCourseSelect').value
     };
+    
+    // Add loading state
+    const originalText = submitBtn.textContent;
+    submitBtn.textContent = 'Updating...';
+    submitBtn.disabled = true;
 
     try {
         const res = await fetch(`/api/students/${studentId}`, {
@@ -166,6 +182,9 @@ document.getElementById('editStudentForm')?.addEventListener('submit', async (e)
         }
     } catch (err) {
         showFlash('Error updating student', 'danger');
+    } finally {
+        submitBtn.textContent = originalText;
+        submitBtn.disabled = false;
     }
 });
 
