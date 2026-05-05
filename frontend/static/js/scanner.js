@@ -1,85 +1,184 @@
 let scanBusy = false;
 let html5QrCodeScanner = null;
+let videoElement = null;
+let canvasElement = null;
 
-function renderResult(data, isError = false) {
-    const resultEl = document.getElementById('scan-result');
-    
-    if (!data || isError) {
-        resultEl.innerHTML = `
-            <div class="text-center py-4">
-                <p class="text-danger mb-2">${data?.error || 'Student not found'}</p>
-                <p class="text-muted small">Please try scanning again</p>
-            </div>
-        `;
-        return;
-    }
-
-    const student = data.student;
-    const attendance = data.attendance;
-    
-    const timeIn = attendance?.time_in 
-        ? new Date(attendance.time_in).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) 
-        : 'N/A';
-    const timeOut = attendance?.time_out 
-        ? new Date(attendance.time_out).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) 
-        : '—';
-    const dateStr = attendance?.date 
-        ? new Date(attendance.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) 
-        : new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    
-    const status = attendance?.status || 'present';
-    const statusBadgeClass = status === 'present' ? 'bg-success' : 'bg-secondary';
-    const isAlreadyRecorded = attendance?.time_in && !attendance?.time_out;
-
-    resultEl.innerHTML = `
-        <div class="card border-0" style="background-color: #f9f9f9;">
-            <div class="card-body">
-                <h5 class="fw-bold mb-1">${student.name}</h5>
-                <p class="text-muted mb-3 small">${student.course_name || 'No course assigned'}</p>
-                
-                <div class="row g-2 mb-3">
-                    <div class="col-6">
-                        <span class="d-block text-muted small">Date</span>
-                        <span class="fw-medium">${dateStr}</span>
-                    </div>
-                    <div class="col-6">
-                        <span class="d-block text-muted small">Status</span>
-                        <span class="badge ${statusBadgeClass}">${status}</span>
-                    </div>
-                </div>
-                
-                <div class="row g-2">
-                    <div class="col-6">
-                        <span class="d-block text-muted small">Time In</span>
-                        <span class="fw-medium">${timeIn}</span>
-                    </div>
-                    <div class="col-6">
-                        <span class="d-block text-muted small">Time Out</span>
-                        <span class="fw-medium">${timeOut}</span>
-                    </div>
-                </div>
-                
-                ${isAlreadyRecorded 
-                    ? '<div class="alert alert-warning mt-3 mb-0 small py-2">Already checked in. Scan again to check out.</div>' 
-                    : ''}
-            </div>
-        </div>
-    `;
+function getToken() {
+    const token = sessionStorage.getItem('token');
+    if (token) return token;
+    const match = document.cookie.match(/token=([^;]+)/);
+    return match ? match[1] : null;
 }
 
-function postScan(qrData) {
-    if (scanBusy) {
+function updateChecklist(step, status) {
+    const item = document.getElementById(`checklist-${step}`);
+    if (!item) return;
+    
+    item.classList.remove('pending', 'detected', 'verified', 'failed');
+    
+    if (status === 'pending') {
+        item.querySelector('.badge').textContent = '-';
+        item.querySelector('.checklist-text').classList.add('text-muted');
+    } else if (status === 'detected') {
+        item.classList.add('detected');
+        item.querySelector('.badge').textContent = '✓';
+    } else if (status === 'verified') {
+        item.classList.add('verified');
+        item.querySelector('.badge').textContent = '✓';
+    } else if (status === 'failed') {
+        item.classList.add('failed');
+        item.querySelector('.badge').textContent = '✕';
+    }
+}
+
+function resetChecklist() {
+    updateChecklist('qr', 'pending');
+    updateChecklist('face', 'pending');
+    updateChecklist('identity', 'pending');
+}
+
+function captureFrame() {
+    if (!videoElement || !canvasElement) return null;
+    
+    canvasElement.width = videoElement.videoWidth;
+    canvasElement.height = videoElement.videoHeight;
+    
+    const ctx = canvasElement.getContext('2d');
+    ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+    
+    let dataUrl = canvasElement.toDataURL('image/jpeg', 0.8);
+    
+    if (dataUrl.startsWith('data:image/jpeg;base64,')) {
+        dataUrl = dataUrl.substring('data:image/jpeg;base64,'.length);
+    }
+    
+    return dataUrl;
+}
+
+function updateLastScanTime() {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    document.getElementById('last-scan-time').textContent = timeStr;
+}
+
+function renderResult(data) {
+    const resultEl = document.getElementById('scan-result');
+    
+    if (!data) {
+        resultEl.innerHTML = '<p class="text-muted text-center py-4">Waiting for scan...</p>';
         return;
     }
     
+    const studentName = data.student_name || 'Unknown';
+    const courseName = data.course_name || 'No course';
+    const status = data.status || '';
+    const verification = data.verification || 'qr_only';
+    
+    let cardClass = 'success-card';
+    let badgeText = '✅ Verified by QR + Face';
+    
+    if (verification === 'qr_only') {
+        badgeText = '📱 QR Only Mode';
+    }
+    
+    let statusMessage = '';
+    if (status === 'time_in_recorded') {
+        statusMessage = `Checked in at ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+    } else if (status === 'time_out_recorded') {
+        statusMessage = `Checked out at ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+    } else if (status === 'already_complete') {
+        cardClass = 'warning-card';
+        statusMessage = 'Attendance already recorded for today';
+    }
+    
+    resultEl.innerHTML = `
+        <div class="result-card ${cardClass} rounded p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <h5 class="fw-bold mb-0">${studentName}</h5>
+                <span class="verification-badge">${badgeText}</span>
+            </div>
+            <p class="text-muted small mb-2">${courseName}</p>
+            <p class="mb-0 small">${statusMessage}</p>
+        </div>
+    `;
+    
+    updateLastScanTime();
+    
+    setTimeout(() => {
+        resultEl.innerHTML = '<p class="text-muted text-center py-4">Waiting for scan...</p>';
+        resetChecklist();
+    }, 4000);
+}
+
+function renderError(errorCode, message) {
+    const resultEl = document.getElementById('scan-result');
+    
+    let cardClass = 'error-card';
+    let icon = '⚠️';
+    let title = 'Scan Error';
+    
+    if (errorCode === 'no_face') {
+        cardClass = 'warning-card';
+        icon = '👤';
+        title = 'No Face Detected';
+    } else if (errorCode === 'face_mismatch') {
+        icon = '❌';
+        title = 'Face Mismatch';
+    } else if (errorCode === 'invalid_qr') {
+        icon = '📱';
+        title = 'Invalid QR Code';
+    } else if (errorCode === 'already_complete') {
+        cardClass = 'warning-card';
+        icon = 'ℹ️';
+        title = 'Already Recorded';
+    }
+    
+    resultEl.innerHTML = `
+        <div class="result-card ${cardClass} rounded p-3">
+            <div class="d-flex align-items-center mb-2">
+                <span class="fs-4 me-2">${icon}</span>
+                <h5 class="fw-bold mb-0">${title}</h5>
+            </div>
+            <p class="mb-0 small">${message}</p>
+        </div>
+    `;
+    
+    updateLastScanTime();
+    
+    setTimeout(() => {
+        resultEl.innerHTML = '<p class="text-muted text-center py-4">Waiting for scan...</p>';
+        resetChecklist();
+    }, 3000);
+}
+
+function onSimultaneousScan(qrData) {
+    if (scanBusy) return;
+    
     scanBusy = true;
+    document.getElementById('qr-status-dot').classList.remove('bg-primary');
+    document.getElementById('qr-status-dot').classList.add('bg-warning');
+    
+    updateChecklist('qr', 'detected');
+    updateChecklist('face', 'detected');
+    
+    const frameBase64 = captureFrame();
+    
+    if (!frameBase64) {
+        renderError('capture_error', 'Failed to capture camera frame');
+        scanBusy = false;
+        return;
+    }
     
     fetch('/scan', {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + getToken()
         },
-        body: JSON.stringify({ qr_data: qrData })
+        body: JSON.stringify({
+            qr_data: qrData,
+            frame: frameBase64
+        })
     })
     .then(async (response) => {
         const result = await response.json();
@@ -88,55 +187,76 @@ function postScan(qrData) {
             throw new Error(result.error || 'Unable to process scan');
         }
         
-        renderResult(result, false);
+        if (result.verification === 'qr_and_face') {
+            updateChecklist('identity', 'verified');
+        } else {
+            updateChecklist('identity', 'detected');
+        }
+        
+        renderResult(result);
     })
     .catch((err) => {
         console.error('Scan error:', err);
-        renderResult({ error: err.message }, true);
+        const errorCode = err.message || 'unknown_error';
+        
+        if (errorCode === 'no_face') {
+            updateChecklist('face', 'failed');
+        } else if (errorCode === 'face_mismatch') {
+            updateChecklist('identity', 'failed');
+        } else if (errorCode === 'invalid_qr') {
+            updateChecklist('qr', 'failed');
+        }
+        
+        renderError(errorCode, result?.message || err.message);
     })
     .finally(() => {
         setTimeout(() => {
             scanBusy = false;
-        }, 2000);
+            document.getElementById('qr-status-dot').classList.remove('bg-warning');
+            document.getElementById('qr-status-dot').classList.add('bg-primary');
+        }, 3000);
     });
 }
 
-function onScanSuccess(decodedText) {
-    if (!scanBusy) {
-        postScan(decodedText);
+function onQrSuccess(decodedText) {
+    if (!scanBusy && decodedText) {
+        onSimultaneousScan(decodedText);
     }
 }
 
-function onScanError(errorMessage) {
-    console.warn('Scanner warning:', errorMessage);
-    // Show error in UI but don't stop scanner
-    const resultEl = document.getElementById('scan-result');
-    if (resultEl && !scanBusy) {
-        resultEl.innerHTML = `
-            <div class="text-center py-4">
-                <p class="text-muted small">Waiting for valid QR code...</p>
-            </div>
-        `;
-    }
+function onQrError(errorMessage) {
+    // Silent - errors are expected when no QR is in frame
 }
 
-function initScanner() {
-    html5QrCodeScanner = new Html5Qrcode('qr-reader');
+async function startCamera() {
+    videoElement = document.getElementById('camera-feed');
+    canvasElement = document.getElementById('capture-canvas');
     
-    const config = { 
-        fps: 10, 
-        qrbox: { width: 250, height: 250 },
-        aspectRatio: 1.0
-    };
-    
-    html5QrCodeScanner.start(
-        { facingMode: 'environment' },
-        config,
-        onScanSuccess,
-        onScanError
-    )
-    .catch((err) => {
-        console.error('Failed to start scanner:', err);
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: 'environment',
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            }
+        });
+        
+        videoElement.srcObject = stream;
+        
+        document.getElementById('camera-status').textContent = 'Camera Active';
+        
+        return new Promise((resolve) => {
+            videoElement.onloadedmetadata = () => {
+                videoElement.play();
+                resolve();
+            };
+        });
+    } catch (err) {
+        console.error('Camera error:', err);
+        document.getElementById('camera-status').textContent = 'Camera Error';
+        document.querySelector('.status-dot.bg-success').classList.remove('bg-success');
+        document.querySelector('.status-dot').classList.add('bg-danger');
+        
         const resultEl = document.getElementById('scan-result');
         resultEl.innerHTML = `
             <div class="text-center py-4">
@@ -144,7 +264,47 @@ function initScanner() {
                 <p class="text-muted small">Please ensure camera permissions are granted</p>
             </div>
         `;
-    });
+        throw err;
+    }
+}
+
+async function startQrDetection() {
+    const qrReaderElement = document.getElementById('qr-reader-hidden');
+    
+    html5QrCodeScanner = new Html5Qrcode(qrReaderElement.id);
+    
+    const config = {
+        fps: 10,
+        qrbox: { width: 250, height: 250 },
+        aspectRatio: 1.0
+    };
+    
+    try {
+        await html5QrCodeScanner.start(
+            { facingMode: 'environment' },
+            config,
+            onQrSuccess,
+            onQrError
+        );
+        
+        document.getElementById('qr-status').textContent = 'QR Detection Active';
+    } catch (err) {
+        console.error('QR detection error:', err);
+        document.getElementById('qr-status').textContent = 'QR Detection Error';
+        document.getElementById('qr-status-dot').classList.remove('bg-primary');
+        document.getElementById('qr-status-dot').classList.add('bg-danger');
+    }
+}
+
+async function initScanner() {
+    resetChecklist();
+    
+    try {
+        await startCamera();
+        await startQrDetection();
+    } catch (err) {
+        console.error('Scanner initialization failed:', err);
+    }
 }
 
 document.addEventListener('DOMContentLoaded', function() {

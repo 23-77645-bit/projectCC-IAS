@@ -438,28 +438,113 @@ def delete_course(current_user, id):
 @token_required
 def scan_qr(current_user):
     try:
+        from utils.simultaneous_scanner import process_simultaneous_scan
+        
         data = request.get_json()
         qr_data = data.get('qr_data', '')
+        frame = data.get('frame', '')
         
+        # Validate qr_data is present
         if not qr_data:
             return jsonify({'error': 'QR data is required'}), 400
         
+        # If frame is missing, fall back to QR-only mode (backward compatibility)
+        if not frame:
+            # Original QR-only logic for backward compatibility
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT s.id, s.name, s.course_id, c.name as course_name
+                FROM students s
+                LEFT JOIN courses c ON s.course_id = c.id
+                WHERE s.qr_data = %s
+            ''', (qr_data,))
+            
+            student = cursor.fetchone()
+            
+            if not student:
+                cursor.close()
+                conn.close()
+                return jsonify({'error': 'Student not found'}), 404
+            
+            today = datetime.date.today()
+            now = datetime.datetime.now().time()
+            
+            cursor.execute('''
+                SELECT * FROM attendance 
+                WHERE student_id = %s AND date = %s
+            ''', (student['id'], today))
+            
+            existing_record = cursor.fetchone()
+            
+            if existing_record:
+                if existing_record['time_in'] and not existing_record['time_out']:
+                    cursor.execute('''
+                        UPDATE attendance 
+                        SET time_out = %s, status = "present"
+                        WHERE id = %s
+                    ''', (now, existing_record['id']))
+                    conn.commit()
+                    
+                    cursor.close()
+                    conn.close()
+                    
+                    return jsonify({
+                        'student_name': student['name'],
+                        'course_name': student['course_name'],
+                        'status': 'time_out_recorded',
+                        'message': 'Time out recorded successfully'
+                    }), 200
+                else:
+                    cursor.close()
+                    conn.close()
+                    return jsonify({
+                        'student_name': student['name'],
+                        'course_name': student['course_name'],
+                        'status': 'already_complete',
+                        'message': 'Attendance already recorded for today'
+                    }), 200
+            else:
+                cursor.execute('''
+                    INSERT INTO attendance (student_id, course_id, date, time_in, status)
+                    VALUES (%s, %s, %s, %s, "present")
+                ''', (student['id'], student['course_id'], today, now))
+                
+                conn.commit()
+                
+                cursor.close()
+                conn.close()
+                
+                return jsonify({
+                    'student_name': student['name'],
+                    'course_name': student['course_name'],
+                    'status': 'time_in_recorded',
+                    'message': 'Time in recorded successfully'
+                }), 201
+        
+        # Simultaneous QR + Face scan mode
+        result = process_simultaneous_scan(frame, qr_data)
+        
+        if not result.get('success'):
+            error_code = result.get('error', 'unknown_error')
+            message = result.get('message', 'Unknown error occurred')
+            return jsonify({'error': error_code, 'message': message}), 400
+        
+        # Extract student info from result
+        student_id = result.get('student_id')
+        student_name = result.get('student_name')
+        course_name = result.get('course_name')
+        
+        # Handle QR-only fallback (no face registered)
+        if result.get('skip_face'):
+            verification_type = 'qr_only'
+        else:
+            verification_type = 'qr_and_face'
+        
+        # Record attendance
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT s.id, s.name, s.course_id, c.name as course_name
-            FROM students s
-            LEFT JOIN courses c ON s.course_id = c.id
-            WHERE s.qr_data = %s
-        ''', (qr_data,))
-        
-        student = cursor.fetchone()
-        
-        if not student:
-            cursor.close()
-            conn.close()
-            return jsonify({'error': 'Student not found'}), 404
         
         today = datetime.date.today()
         now = datetime.datetime.now().time()
@@ -467,7 +552,7 @@ def scan_qr(current_user):
         cursor.execute('''
             SELECT * FROM attendance 
             WHERE student_id = %s AND date = %s
-        ''', (student['id'], today))
+        ''', (student_id, today))
         
         existing_record = cursor.fetchone()
         
@@ -484,25 +569,27 @@ def scan_qr(current_user):
                 conn.close()
                 
                 return jsonify({
-                    'student_name': student['name'],
-                    'course_name': student['course_name'],
+                    'student_name': student_name,
+                    'course_name': course_name,
                     'status': 'time_out_recorded',
+                    'verification': verification_type,
                     'message': 'Time out recorded successfully'
                 }), 200
             else:
                 cursor.close()
                 conn.close()
                 return jsonify({
-                    'student_name': student['name'],
-                    'course_name': student['course_name'],
+                    'student_name': student_name,
+                    'course_name': course_name,
                     'status': 'already_complete',
+                    'verification': verification_type,
                     'message': 'Attendance already recorded for today'
                 }), 200
         else:
             cursor.execute('''
                 INSERT INTO attendance (student_id, course_id, date, time_in, status)
                 VALUES (%s, %s, %s, %s, "present")
-            ''', (student['id'], student['course_id'], today, now))
+            ''', (student_id, result.get('course_id') or student_id, today, now))
             
             conn.commit()
             
@@ -510,13 +597,15 @@ def scan_qr(current_user):
             conn.close()
             
             return jsonify({
-                'student_name': student['name'],
-                'course_name': student['course_name'],
+                'student_name': student_name,
+                'course_name': course_name,
                 'status': 'time_in_recorded',
-                'message': 'Time in recorded successfully'
+                'verification': verification_type,
+                'message': 'Identity verified by QR and Face' if verification_type == 'qr_and_face' else 'Time in recorded successfully'
             }), 201
+            
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'server_error', 'message': str(e)}), 500
 
 @app.route('/upload-csv', methods=['POST'])
 @token_required

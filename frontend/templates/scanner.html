@@ -1,24 +1,71 @@
 {% extends 'base.html' %}
 {% block title %}Live QR Scanner{% endblock %}
 {% block content %}
-<div class="row">
-    <div class="col-12 mb-4">
-        <h2 class="fw-bold mb-1">Live QR Scanner</h2>
-        <p class="text-muted">Point the camera at a student's QR code to record attendance</p>
+<div class="row mb-4">
+    <div class="col-12">
+        <h2 class="fw-bold mb-1">Live QR + Face Scanner</h2>
+        <p class="text-muted">Show QR code and face to the camera at the same time for verification</p>
     </div>
 </div>
 <div class="row">
     <div class="col-lg-7">
-        <div class="card">
-            <div class="card-body p-3">
-                <div id="qr-reader" style="width: 100%;"></div>
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-0 position-relative" style="background: #000; border-radius: 8px; overflow: hidden;">
+                <video id="camera-feed" autoplay playsinline muted style="width: 100%; display: block;"></video>
+                <canvas id="capture-canvas" style="display: none;"></canvas>
+                <div id="qr-reader-hidden" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none;"></div>
+                
+                <div class="scan-overlay">
+                    <div class="scan-corner top-left"></div>
+                    <div class="scan-corner top-right"></div>
+                    <div class="scan-corner bottom-left"></div>
+                    <div class="scan-corner bottom-right"></div>
+                </div>
+                
+                <div class="status-bar position-absolute bottom-0 start-0 w-100 p-2 d-flex justify-content-between align-items-center" style="background: rgba(0,0,0,0.7);">
+                    <div class="d-flex align-items-center">
+                        <span class="status-dot bg-success me-2"></span>
+                        <span class="text-white small" id="camera-status">Camera Active</span>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <span class="status-dot bg-primary me-2" id="qr-status-dot"></span>
+                        <span class="text-white small" id="qr-status">QR Detection Active</span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
     <div class="col-lg-5">
-        <div class="card">
+        <div class="card border-0 shadow-sm mb-3">
             <div class="card-header bg-white border-bottom">
-                <h6 class="fw-bold mb-0">Student Information</h6>
+                <h6 class="fw-bold mb-0">Verification Checklist</h6>
+            </div>
+            <div class="card-body py-3">
+                <div class="checklist-item d-flex align-items-center mb-2" id="checklist-qr">
+                    <span class="checklist-icon me-3">
+                        <span class="badge bg-secondary rounded-circle" style="width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;">-</span>
+                    </span>
+                    <span class="checklist-text text-muted">QR Code Detected</span>
+                </div>
+                <div class="checklist-item d-flex align-items-center mb-2" id="checklist-face">
+                    <span class="checklist-icon me-3">
+                        <span class="badge bg-secondary rounded-circle" style="width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;">-</span>
+                    </span>
+                    <span class="checklist-text text-muted">Face Detected</span>
+                </div>
+                <div class="checklist-item d-flex align-items-center" id="checklist-identity">
+                    <span class="checklist-icon me-3">
+                        <span class="badge bg-secondary rounded-circle" style="width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;">-</span>
+                    </span>
+                    <span class="checklist-text text-muted">Identity Matched</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+                <h6 class="fw-bold mb-0">Scan Result</h6>
+                <small class="text-muted" id="last-scan-time">--:--:--</small>
             </div>
             <div class="card-body">
                 <div id="scan-result">
@@ -28,6 +75,144 @@
         </div>
     </div>
 </div>
+
+<style>
+.scan-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 250px;
+    height: 250px;
+    pointer-events: none;
+}
+
+.scan-corner {
+    position: absolute;
+    width: 30px;
+    height: 30px;
+    border-color: #00d4ff;
+    border-style: solid;
+    transition: all 0.3s ease;
+}
+
+.scan-corner.top-left {
+    top: 0;
+    left: 0;
+    border-width: 4px 0 0 4px;
+    animation: pulse-corner 2s infinite;
+}
+
+.scan-corner.top-right {
+    top: 0;
+    right: 0;
+    border-width: 4px 4px 0 0;
+    animation: pulse-corner 2s infinite 0.5s;
+}
+
+.scan-corner.bottom-left {
+    bottom: 0;
+    left: 0;
+    border-width: 0 0 4px 4px;
+    animation: pulse-corner 2s infinite 1s;
+}
+
+.scan-corner.bottom-right {
+    bottom: 0;
+    right: 0;
+    border-width: 0 4px 4px 0;
+    animation: pulse-corner 2s infinite 1.5s;
+}
+
+@keyframes pulse-corner {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.status-dot.bg-success {
+    animation: pulse-dot 2s infinite;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.checklist-item {
+    transition: all 0.3s ease;
+}
+
+.checklist-item.verified .checklist-icon .badge {
+    background-color: #28a745 !important;
+}
+
+.checklist-item.verified .checklist-text {
+    color: #28a745;
+    font-weight: 600;
+}
+
+.checklist-item.verified .checklist-icon .badge::after {
+    content: '✓';
+    color: white;
+}
+
+.checklist-item.detected .checklist-icon .badge {
+    background-color: #17a2b8 !important;
+}
+
+.checklist-item.detected .checklist-text {
+    color: #17a2b8;
+}
+
+.checklist-item.failed .checklist-icon .badge {
+    background-color: #dc3545 !important;
+}
+
+.checklist-item.failed .checklist-text {
+    color: #dc3545;
+}
+
+.result-card {
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.success-card {
+    background: linear-gradient(135deg, #f8fff9 0%, #e8f5e9 100%);
+    border: 1px solid #c8e6c9;
+}
+
+.error-card {
+    background: linear-gradient(135deg, #fff8f8 0%, #ffebee 100%);
+    border: 1px solid #ffcdd2;
+}
+
+.warning-card {
+    background: linear-gradient(135deg, #fffef8 0%, #fff8e1 100%);
+    border: 1px solid #ffecb3;
+}
+
+.verification-badge {
+    background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    display: inline-block;
+}
+</style>
 {% endblock %}
 {% block scripts %}
 <script src="https://unpkg.com/html5-qrcode@2.3.11/minified/html5-qrcode.min.js"></script>
