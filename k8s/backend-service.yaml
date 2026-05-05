@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: attendance-backend
+  namespace: attendance-system
+spec:
+  type: ClusterIP
+  selector:
+    app: attendance-backend
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
