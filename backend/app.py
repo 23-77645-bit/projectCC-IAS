@@ -1,6 +1,7 @@
 import os
 import csv
 import uuid
+import re
 import jwt
 import datetime
 from functools import wraps
@@ -8,6 +9,7 @@ from flask import Flask, request, jsonify, redirect, session, render_template, s
 from flask_mail import Mail
 import pymysql
 from dotenv import load_dotenv
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from utils.qr_generator import generate_qr
 from utils.email_sender import send_qr_email
@@ -16,6 +18,11 @@ load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.getenv('JWT_SECRET', 'default-secret-key')
+
+# Hash the admin password at startup for secure comparison
+_admin_username = os.getenv('ADMIN_USERNAME', 'admin')
+_admin_password_plain = os.getenv('ADMIN_PASSWORD', 'admin123')
+_admin_password_hash = generate_password_hash(_admin_password_plain)
 
 app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
 app.config['MAIL_PORT'] = 587
@@ -71,10 +78,9 @@ def login():
         if not username or not password:
             return jsonify({'error': 'Username and password are required'}), 400
         
-        admin_username = os.getenv('ADMIN_USERNAME', 'admin')
-        admin_password = os.getenv('ADMIN_PASSWORD', 'admin123')
-        
-        if username == admin_username and password == admin_password:
+        # Use hashed password comparison for security
+        global _admin_username, _admin_password_hash
+        if username == _admin_username and check_password_hash(_admin_password_hash, password):
             token = jwt.encode({
                 'username': username,
                 'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
