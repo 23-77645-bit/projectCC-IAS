@@ -2,6 +2,58 @@
 
 A comprehensive attendance management system for Batangas State University ARASOF-Nasugbu that leverages QR code technology for efficient student identification and real-time attendance tracking.
 
+## System Architecture
+
+```mermaid
+graph TD
+    subgraph Client["Client Layer"]
+        Browser[Web Browser]
+    end
+
+    subgraph K8s["Kubernetes Cluster"]
+        Ingress[Nginx Ingress Controller<br/>Port 443/80]
+        
+        subgraph Namespace["attendance-system Namespace"]
+            BackendSvc[Backend Service<br/>ClusterIP:5000]
+            DBSvc[Database Service<br/>ClusterIP:3306]
+            
+            subgraph BackendPods["Backend Pods (2-10 replicas)"]
+                Pod1[Gunicorn/Flask<br/>Port 5000]
+                Pod2[Gunicorn/Flask<br/>Port 5000]
+            end
+            
+            subgraph DBPod["Database Pod"]
+                MariaDB[MariaDB 11<br/>Port 3306]
+                PVC[(PersistentVolumeClaim<br/>5Gi)]
+            end
+        end
+    end
+
+    Browser -->|HTTPS/HTTP| Ingress
+    Ingress -->|Route /| BackendSvc
+    BackendSvc -->|Load Balance| Pod1
+    BackendSvc -->|Load Balance| Pod2
+    Pod1 -->|PyMySQL| DBSvc
+    Pod2 -->|PyMySQL| DBSvc
+    DBSvc --> MariaDB
+    MariaDB --> PVC
+
+    style Client fill:#e1f5fe
+    style K8s fill:#fff3e0
+    style Namespace fill:#f3e5f5
+    style BackendPods fill:#e8f5e9
+    style DBPod fill:#fce4ec
+```
+
+### Architecture Components Flow
+
+1. **Browser** → User accesses the web application via HTTPS
+2. **Nginx Ingress** → Routes external traffic, applies rate limiting and security headers
+3. **Backend Service** → Kubernetes ClusterIP service load-balances requests across backend pods
+4. **Gunicorn/Flask Pods** → Application servers process requests (auto-scales based on CPU)
+5. **Database Service** → Internal ClusterIP service for database connectivity
+6. **MariaDB** → Persistent database with PVC for data durability
+
 ## Tech Stack
 
 | Component | Technology |
@@ -9,7 +61,7 @@ A comprehensive attendance management system for Batangas State University ARASO
 | Backend Framework | Flask (Python 3.11) |
 | Database | MariaDB 11 |
 | ORM/Database Driver | PyMySQL |
-| Authentication | JWT (PyJWT) |
+| Authentication | JWT (PyJWT) + Werkzeug Password Hashing |
 | Email Service | Flask-Mail |
 | QR Code Generation | qrcode + Pillow |
 | Frontend Templates | Jinja2 |
@@ -18,6 +70,157 @@ A comprehensive attendance management system for Batangas State University ARASO
 | QR Scanner | html5-qrcode (CDN) |
 | Web Server | Gunicorn + Nginx |
 | Containerization | Docker + Docker Compose |
+| Orchestration | Kubernetes (Deployments, Services, HPA, Ingress) |
+
+## Kubernetes Deployment
+
+### Prerequisites
+
+- Kubernetes cluster (GKE, EKS, AKS, or local Minikube/Kind)
+- `kubectl` configured to communicate with your cluster
+- Nginx Ingress Controller installed in the cluster
+- Metrics Server enabled (required for HPA)
+
+### Deploy to Kubernetes
+
+1. **Apply all Kubernetes manifests:**
+   ```bash
+   kubectl apply -f k8s/namespace.yaml
+   kubectl apply -f k8s/pvc.yaml
+   kubectl apply -f k8s/configmap.yaml
+   kubectl apply -f k8s/secret.yaml
+   kubectl apply -f k8s/db-init-configmap.yaml
+   kubectl apply -f k8s/db-deployment.yaml
+   kubectl apply -f k8s/db-service.yaml
+   kubectl apply -f k8s/backend-deployment.yaml
+   kubectl apply -f k8s/backend-service.yaml
+   kubectl apply -f k8s/ingress.yaml
+   kubectl apply -f k8s/hpa.yaml
+   ```
+
+   Or apply all at once:
+   ```bash
+   kubectl apply -f k8s/
+   ```
+
+2. **Verify deployment:**
+   ```bash
+   kubectl get all -n attendance-system
+   ```
+
+3. **Check pod status:**
+   ```bash
+   kubectl get pods -n attendance-system
+   ```
+
+4. **Get the external IP:**
+   ```bash
+   kubectl get ingress -n attendance-system
+   ```
+
+5. **Access the application:**
+   - Add entry to `/etc/hosts`: `<EXTERNAL_IP> attendance.local`
+   - Open browser to `http://attendance.local`
+
+### Deploy to Google Cloud GKE
+
+1. **Create a GKE cluster:**
+   ```bash
+   gcloud container clusters create attendance-cluster \
+     --num-nodes=3 \
+     --machine-type=e2-medium \
+     --zone=us-central1-a
+   ```
+
+2. **Configure kubectl:**
+   ```bash
+   gcloud container clusters get-credentials attendance-cluster --zone us-central1-a
+   ```
+
+3. **Enable required APIs:**
+   ```bash
+   gcloud services enable container.googleapis.com
+   ```
+
+4. **Install Nginx Ingress Controller:**
+   ```bash
+   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+   ```
+
+5. **Deploy the application:**
+   ```bash
+   kubectl apply -f k8s/
+   ```
+
+6. **Get the external load balancer IP:**
+   ```bash
+   kubectl get ingress attendance-ingress -n attendance-system
+   ```
+
+7. **Update DNS or /etc/hosts:**
+   Point `attendance.local` to the external IP from step 6.
+
+### Deploy to AWS EKS
+
+1. **Create an EKS cluster:**
+   ```bash
+   eksctl create cluster \
+     --name attendance-cluster \
+     --region us-west-2 \
+     --nodes 3 \
+     --node-type t3.medium
+   ```
+
+2. **Configure kubectl:**
+   ```bash
+   aws eks update-kubeconfig --region us-west-2 --name attendance-cluster
+   ```
+
+3. **Install Nginx Ingress Controller:**
+   ```bash
+   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/aws/deploy.yaml
+   ```
+
+4. **Deploy the application:**
+   ```bash
+   kubectl apply -f k8s/
+   ```
+
+5. **Get the external load balancer IP:**
+   ```bash
+   kubectl get ingress attendance-ingress -n attendance-system
+   ```
+
+6. **Update Route53 or /etc/hosts:**
+   Point your domain to the external IP from step 5.
+
+### Scaling and Monitoring
+
+1. **Check HPA status:**
+   ```bash
+   kubectl get hpa -n attendance-system
+   ```
+
+2. **Manually scale backend:**
+   ```bash
+   kubectl scale deployment attendance-backend --replicas=5 -n attendance-system
+   ```
+
+3. **View resource usage:**
+   ```bash
+   kubectl top pods -n attendance-system
+   ```
+
+4. **View logs:**
+   ```bash
+   kubectl logs -f deployment/attendance-backend -n attendance-system
+   ```
+
+### Cleanup
+
+```bash
+kubectl delete namespace attendance-system
+```
 
 ## Folder Structure
 
@@ -53,8 +256,21 @@ A comprehensive attendance management system for Batangas State University ARASO
 │       │   └── attendance.js  # Attendance filtering/export
 │       └── images/
 │           └── qrcodes/       # Generated QR code images
+├── k8s/
+│   ├── namespace.yaml         # Kubernetes namespace definition
+│   ├── configmap.yaml         # Non-sensitive configuration
+│   ├── secret.yaml            # Sensitive credentials (base64 encoded)
+│   ├── pvc.yaml               # PersistentVolumeClaim for database
+│   ├── db-deployment.yaml     # MariaDB deployment with PVC
+│   ├── db-service.yaml        # Database ClusterIP service
+│   ├── db-init-configmap.yaml # Database initialization script
+│   ├── backend-deployment.yaml# Flask/Gunicorn deployment (2+ replicas)
+│   ├── backend-service.yaml   # Backend ClusterIP service
+│   ├── ingress.yaml           # Nginx Ingress configuration
+│   └── hpa.yaml               # HorizontalPodAutoscaler (70% CPU target)
 ├── docker-compose.yml         # Multi-container orchestration
 ├── nginx.conf                 # Nginx reverse proxy config
+├── SECURITY.md                # Security analysis and risk assessment
 └── README.md                  # This file
 ```
 
@@ -252,6 +468,22 @@ Verify SMTP credentials in `.env`:
 - MAIL_PORT (587 for TLS, 465 for SSL)
 - MAIL_USERNAME
 - MAIL_PASSWORD (use app-specific password for Gmail)
+
+## Security
+
+For detailed security analysis, risk assessment, and mitigation strategies, see [SECURITY.md](SECURITY.md).
+
+### Key Security Features
+
+- **Password Hashing:** Admin passwords are hashed using Werkzeug (PBKDF2-SHA256)
+- **JWT Authentication:** Token-based authentication with 24-hour expiration
+- **Rate Limiting:** Nginx rate limiting on `/login` endpoint (5 requests/minute)
+- **Security Headers:** X-Frame-Options, X-Content-Type-Options, HSTS, CSP configured
+- **CSV Upload Hardening:** MIME type validation, file size limits, field sanitization
+- **Container Isolation:** Backend services isolated in Docker/Kubernetes networks
+- **Horizontal Scaling:** Kubernetes HPA for automatic scaling under load
+
+---
 
 ## Team Members
 
