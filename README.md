@@ -72,6 +72,66 @@ graph TD
 | Containerization | Docker + Docker Compose |
 | Orchestration | Kubernetes (Deployments, Services, HPA, Ingress) |
 
+## Local Development Setup
+
+Choose your preferred deployment method:
+
+### Option 1: Docker Compose (Simplest - Recommended for Quick Start)
+
+See **[LOCAL_SETUP_GUIDE.md](LOCAL_SETUP_GUIDE.md)** for complete Docker Compose instructions.
+
+**Quick Start:**
+```bash
+# Create environment file
+cat > .env << EOF
+MYSQL_ROOT_PASSWORD=rootpassword
+MYSQL_DATABASE=attendance_db
+MYSQL_USER=attendance_user
+MYSQL_PASSWORD=attendance_secure_password_2025
+JWT_SECRET=super_secure_jwt_secret_key_change_in_production_2025
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin123
+FLASK_ENV=production
+EOF
+
+# Start all services
+docker-compose up --build -d
+
+# Access at http://localhost
+```
+
+### Option 2: Kubernetes with Kind (Production-Like Environment)
+
+See **[LOCAL_SETUP_GUIDE.md](LOCAL_SETUP_GUIDE.md)** for detailed Kind setup instructions.
+
+**Quick Start:**
+```bash
+# Create Kind cluster
+kind create cluster --name attendance-cluster
+
+# Install Nginx Ingress Controller
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+
+# Deploy application
+kubectl apply -f k8s/
+
+# Port forward to access
+kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 80:80
+```
+
+### Option 3: Full Documentation
+
+For comprehensive setup instructions including:
+- Complete Docker Compose walkthrough
+- Kubernetes (Kind) cluster configuration
+- Security feature testing
+- Troubleshooting guide
+- Architecture diagrams
+
+👉 **See [LOCAL_SETUP_GUIDE.md](LOCAL_SETUP_GUIDE.md)** 👈
+
+---
+
 ## Kubernetes Deployment
 
 ### Prerequisites
@@ -269,8 +329,10 @@ kubectl delete namespace attendance-system
 │   ├── ingress.yaml           # Nginx Ingress configuration
 │   └── hpa.yaml               # HorizontalPodAutoscaler (70% CPU target)
 ├── docker-compose.yml         # Multi-container orchestration
-├── nginx.conf                 # Nginx reverse proxy config
+├── nginx.conf                 # Nginx reverse proxy config (security headers, rate limiting)
 ├── SECURITY.md                # Security analysis and risk assessment
+├── KIND_DEPLOYMENT_GUIDE.md   # Step-by-step Kind (Kubernetes in Docker) setup
+├── LOCAL_SETUP_GUIDE.md       # Complete local setup guide (Docker & Kubernetes)
 └── README.md                  # This file
 ```
 
@@ -471,17 +533,35 @@ Verify SMTP credentials in `.env`:
 
 ## Security
 
-For detailed security analysis, risk assessment, and mitigation strategies, see [SECURITY.md](SECURITY.md).
+For detailed security analysis, risk assessment, CIA triad mapping, and production hardening checklist, see [**SECURITY.md**](SECURITY.md).
 
 ### Key Security Features
 
-- **Password Hashing:** Admin passwords are hashed using Werkzeug (PBKDF2-SHA256)
-- **JWT Authentication:** Token-based authentication with 24-hour expiration
-- **Rate Limiting:** Nginx rate limiting on `/login` endpoint (5 requests/minute)
-- **Security Headers:** X-Frame-Options, X-Content-Type-Options, HSTS, CSP configured
-- **CSV Upload Hardening:** MIME type validation, file size limits, field sanitization
-- **Container Isolation:** Backend services isolated in Docker/Kubernetes networks
-- **Horizontal Scaling:** Kubernetes HPA for automatic scaling under load
+| Feature | Implementation | Mitigation |
+|---------|---------------|------------|
+| **Password Hashing** | Werkzeug (PBKDF2-SHA256) | Prevents plaintext password exposure |
+| **JWT Authentication** | 24-hour token expiration | Limits session hijacking window |
+| **Rate Limiting** | Nginx: 5 req/min on /login | Prevents brute-force attacks |
+| **Security Headers** | X-Frame-Options, CSP, HSTS | Prevents XSS, clickjacking, MIME sniffing |
+| **CSV Hardening** | MIME validation, 2MB limit, 200 row max | Prevents malicious file uploads, DoS |
+| **Input Sanitization** | Email regex, name stripping | Prevents SQL injection, XSS |
+| **Container Isolation** | Separate Docker networks | Limits lateral movement |
+| **Resource Limits** | CPU/memory requests & limits | Prevents resource exhaustion |
+| **Horizontal Scaling** | Kubernetes HPA (70% CPU target) | Ensures availability under load |
+| **Namespace Isolation** | Dedicated K8s namespace | Logical separation from other apps |
+
+### Security Testing Commands
+
+```bash
+# Test rate limiting (should get 429 after 5 attempts)
+for i in {1..10}; do curl -X POST http://localhost/login -H "Content-Type: application/json" -d '{"username":"admin","password":"wrong"}' -w "\nAttempt $i: %{http_code}\n"; done
+
+# Verify security headers
+curl -I http://localhost | grep -E "X-Frame-Options|X-Content-Type-Options|Strict-Transport-Security"
+
+# Check container network isolation
+docker network inspect attendance_network
+```
 
 ---
 
