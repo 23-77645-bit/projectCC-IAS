@@ -5,7 +5,7 @@ import re
 import jwt
 import datetime
 from functools import wraps
-from flask import Flask, request, jsonify, redirect, session, render_template, send_file, make_response
+from flask import Flask, request, jsonify, redirect, session, render_template, send_file, make_response, Response
 from flask_mail import Mail
 import pymysql
 from dotenv import load_dotenv
@@ -18,6 +18,16 @@ load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.getenv('JWT_SECRET', 'default-secret-key')
+
+# Prometheus metrics counters
+metrics_data = {
+    'http_requests_total': 0,
+    'attendance_scans_total': 0,
+    'successful_attendance': 0,
+    'failed_attendance': 0,
+    'login_attempts': 0,
+    'successful_logins': 0
+}
 
 # Hash the admin password at startup for secure comparison
 _admin_username = os.getenv('ADMIN_USERNAME', 'admin')
@@ -72,6 +82,7 @@ def login():
         return render_template('login.html')
     try:
         data = request.get_json()
+        metrics_data['login_attempts'] += 1
         username = data.get('username', '')
         password = data.get('password', '')
         
@@ -89,6 +100,7 @@ def login():
             session['token'] = token
             session['username'] = username
             
+            metrics_data['successful_logins'] += 1
             return jsonify({'token': token, 'message': 'Login successful'}), 200
         else:
             return jsonify({'error': 'Invalid credentials'}), 401
@@ -445,6 +457,7 @@ def delete_course(current_user, id):
 def scan_qr(current_user):
     try:
         from utils.simultaneous_scanner import process_simultaneous_scan
+        metrics_data['attendance_scans_total'] += 1
         
         data = request.get_json()
         qr_data = data.get('qr_data', '')
@@ -499,6 +512,7 @@ def scan_qr(current_user):
                     return jsonify({
                         'student_name': student['name'],
                         'course_name': student['course_name'],
+                    metrics_data['successful_attendance'] += 1
                         'status': 'time_out_recorded',
                         'message': 'Time out recorded successfully'
                     }), 200
@@ -524,6 +538,7 @@ def scan_qr(current_user):
                 
                 return jsonify({
                     'student_name': student['name'],
+                metrics_data['successful_attendance'] += 1
                     'course_name': student['course_name'],
                     'status': 'time_in_recorded',
                     'message': 'Time in recorded successfully'
@@ -778,6 +793,36 @@ def export_attendance(current_user):
         return response
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/metrics')
+def metrics():
+    """Prometheus-compatible metrics endpoint for monitoring"""
+    metrics_output = f"""# HELP http_requests_total Total number of HTTP requests
+# TYPE http_requests_total counter
+http_requests_total {metrics_data['http_requests_total']}
+
+# HELP attendance_scans_total Total number of QR code scans
+# TYPE attendance_scans_total counter
+attendance_scans_total {metrics_data['attendance_scans_total']}
+
+# HELP successful_attendance Total number of successful attendance records
+# TYPE successful_attendance counter
+successful_attendance {metrics_data['successful_attendance']}
+
+# HELP failed_attendance Total number of failed attendance attempts
+# TYPE failed_attendance counter
+failed_attendance {metrics_data['failed_attendance']}
+
+# HELP login_attempts Total number of login attempts
+# TYPE login_attempts counter
+login_attempts {metrics_data['login_attempts']}
+
+# HELP successful_logins Total number of successful logins
+# TYPE successful_logins counter
+successful_logins {metrics_data['successful_logins']}
+"""
+    return Response(metrics_output, mimetype='text/plain')
 
 
 if __name__ == '__main__':
