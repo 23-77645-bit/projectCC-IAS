@@ -8,13 +8,11 @@ metadata:
     nginx.ingress.kubernetes.io/rewrite-target: /
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
     nginx.ingress.kubernetes.io/proxy-body-size: "2m"
-    nginx.ingress.kubernetes.io/rate-limit: "10"
-    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    # Rate limiting is also handled by Nginx container config
 spec:
   ingressClassName: nginx
   rules:
-    - host: attendance.local
-      http:
+    - http:
         paths:
           - path: /
             pathType: Prefix
