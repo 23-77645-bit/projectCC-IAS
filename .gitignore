@@ -1,48 +1,44 @@
-```markdown
-# Configuration and deployment guides
-KIND_DEPLOYMENT_GUIDE.md
-LOCAL_SETUP_GUIDE.md
-DEPLOYMENT.md
+```
+# Dependencies
+venv/
+.venv/
+node_modules/
+__pycache__/
+*.egg-info/
+dist/
+build/
+target/
+.gradle/
 
-# Kubernetes configuration files
-k8s/ingress.yaml
-k8s/secret.yaml
-
-# Log files
+# Logs and temp files
 *.log
+*.tmp
+*.swp
+*.swo
 
-# Environment files
+# Environment
 .env
 .env.local
 *.env.*
 
-# IDE and editor files
+# Editors
 .vscode/
 .idea/
-*.swp
-*.swo
-*.tmp
+*.pyc
+*.class
+*.o
+*.exe
+*.dll
+*.so
+*.a
+*.obj
+*.out
 
-# System files
+# OS
 .DS_Store
 Thumbs.db
 
-# Build artifacts
-dist/
-build/
-*.pyc
-__pycache__/
-
-# Dependencies
-node_modules/
-.venv/
-venv/
-.mypy_cache/
-.pytest_cache/
-target/
-.gradle/
-
-# Coverage reports
+# Coverage
 coverage/
 htmlcov/
 .coverage
@@ -66,8 +62,4 @@ htmlcov/
 *.Z
 *.lz
 *.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
 ```
