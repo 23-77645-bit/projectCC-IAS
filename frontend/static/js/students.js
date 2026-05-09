@@ -12,7 +12,7 @@ function showFlash(message, type) {
 
 async function loadCourses() {
     try {
-        const res = await fetch('/courses');
+        const res = await fetch('/api/courses');
         const data = await res.json();
         courses = data || [];
         
@@ -166,7 +166,7 @@ document.getElementById('editStudentForm')?.addEventListener('submit', async (e)
     submitBtn.disabled = true;
 
     try {
-        const res = await fetch(`/students/${studentId}`, {
+        const res = await fetch(`/api/students/${studentId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
@@ -194,7 +194,7 @@ async function deleteStudent(studentId, studentName) {
     }
 
     try {
-        const res = await fetch(`/students/${studentId}`, {
+        const res = await fetch(`/api/students/${studentId}`, {
             method: 'DELETE'
         });
         const result = await res.json();
