@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: mariadb:11
@@ -36,7 +34,6 @@ services:
       MYSQL_USER: ${MYSQL_USER:-attendance_user}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-attendance_pass}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-attendance_db}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
       JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
       MAIL_SERVER: ${MAIL_SERVER:-smtp.gmail.com}
       MAIL_PORT: ${MAIL_PORT:-587}
