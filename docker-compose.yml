@@ -36,6 +36,11 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-attendance_db}
       JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
       FLASK_ENV: production
+      MAIL_SERVER: ${MAIL_SERVER:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USE_TLS: ${MAIL_USE_TLS:-true}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
     ports:
       - "5000:5000"
     volumes:
