@@ -7,6 +7,7 @@ import datetime
 from functools import wraps
 from flask import Flask, request, jsonify, redirect, session, render_template, send_file, make_response
 from flask_mail import Mail
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 import pymysql
 from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -19,10 +20,35 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv('JWT_SECRET', 'default-secret-key')
 
+# Flask-Login configuration
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.session_protection = 'strong'
+# Set permanent session lifetime to 30 minutes
+app.permanent_session_lifetime = datetime.timedelta(minutes=30)
+
 # Hash the admin password at startup for secure comparison
 _admin_username = os.getenv('ADMIN_USERNAME', 'admin')
 _admin_password_plain = os.getenv('ADMIN_PASSWORD', 'admin123')
 _admin_password_hash = generate_password_hash(_admin_password_plain)
+
+# Simple user class for Flask-Login
+class AdminUser(UserMixin):
+    def __init__(self, username):
+        self.id = username
+        self.username = username
+
+@login_manager.user_loader
+def load_user(username):
+    if username == _admin_username:
+        return AdminUser(username)
+    return None
+
+@login_manager.unauthorized_handler
+def unauthorized():
+    if request.is_json or request.headers.get('Accept') == 'application/json':
+        return jsonify({'error': 'Token is missing or session expired'}), 401
+    return redirect('/login')
 
 app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
 app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', '587'))
@@ -81,13 +107,20 @@ def login():
         # Use hashed password comparison for security
         global _admin_username, _admin_password_hash
         if username == _admin_username and check_password_hash(_admin_password_hash, password):
+            # Create JWT token (still used for API calls)
             token = jwt.encode({
                 'username': username,
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=30)
             }, os.getenv('JWT_SECRET', 'default-secret-key'), algorithm='HS256')
             
+            # Set session as permanent for Flask-Login
+            session.permanent = True
             session['token'] = token
             session['username'] = username
+            
+            # Login with Flask-Login for session management
+            user = AdminUser(username)
+            login_user(user)
             
             return jsonify({'token': token, 'message': 'Login successful'}), 200
         else:
@@ -97,6 +130,7 @@ def login():
 
 @app.route('/logout', methods=['GET'])
 def logout():
+    logout_user()
     session.clear()
     return redirect('/login')
 
@@ -107,6 +141,8 @@ def index():
     return redirect('/login')
 
 @app.route('/dashboard', methods=['GET'])
+@login_required
+@login_required
 @token_required
 def dashboard(current_user):
     try:
@@ -155,6 +191,7 @@ def dashboard(current_user):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/students', methods=['GET'])
+@login_required
 @token_required
 def get_students(current_user):
     try:
@@ -177,6 +214,7 @@ def get_students(current_user):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/students', methods=['POST'])
+@login_required
 @token_required
 def create_student(current_user):
     try:
@@ -234,6 +272,7 @@ def create_student(current_user):
         return jsonify({'error': 'Failed to create student'}), 500
 
 @app.route('/api/students/<int:id>', methods=['PUT'])
+@login_required
 @token_required
 def update_student(current_user, id):
     try:
@@ -283,6 +322,7 @@ def update_student(current_user, id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/students/<int:id>', methods=['DELETE'])
+@login_required
 @token_required
 def delete_student(current_user, id):
     try:
@@ -315,6 +355,7 @@ def delete_student(current_user, id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/courses', methods=['GET'])
+@login_required
 @token_required
 def get_courses(current_user):
     try:
@@ -338,6 +379,7 @@ def get_courses(current_user):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/courses', methods=['POST'])
+@login_required
 @token_required
 def create_course(current_user):
     try:
@@ -374,6 +416,7 @@ def create_course(current_user):
         return jsonify({'error': 'Failed to create course'}), 500
 
 @app.route('/api/courses/<int:id>', methods=['PUT'])
+@login_required
 @token_required
 def update_course(current_user, id):
     try:
@@ -427,6 +470,7 @@ def update_course(current_user, id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/courses/<int:id>', methods=['DELETE'])
+@login_required
 @token_required
 def delete_course(current_user, id):
     try:
@@ -452,6 +496,7 @@ def delete_course(current_user, id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/scan', methods=['POST'])
+@login_required
 @token_required
 def scan_qr(current_user):
     try:
@@ -625,6 +670,7 @@ def scan_qr(current_user):
         return jsonify({'error': 'server_error', 'message': str(e)}), 500
 
 @app.route('/upload-csv', methods=['POST'])
+@login_required
 @token_required
 def upload_csv(current_user):
     try:
@@ -720,26 +766,31 @@ def upload_csv(current_user):
 
 # HTML Page Routes
 @app.route('/scanner')
+@login_required
 @token_required
 def scanner_page(current_user):
     return render_template('scanner.html')
 
 @app.route('/students')
+@login_required
 @token_required
 def students_page(current_user):
     return render_template('students.html')
 
 @app.route('/courses')
+@login_required
 @token_required
 def courses_page(current_user):
     return render_template('courses.html')
 
 @app.route('/attendance')
+@login_required
 @token_required
 def attendance_page(current_user):
     return render_template('attendance.html')
 
 @app.route('/attendance/export', methods=['GET'])
+@login_required
 @token_required
 def export_attendance(current_user):
     try:
