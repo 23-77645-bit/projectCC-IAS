@@ -12,9 +12,9 @@ function showFlash(message, type) {
 
 async function loadCourses() {
     try {
-        const res = await fetch('/api/courses');
+        const res = await fetch('/courses');
         const data = await res.json();
-        courses = data.courses || [];
+        courses = data || [];
     } catch (err) {
         console.error('Failed to load courses:', err);
     }
@@ -25,9 +25,9 @@ async function loadCoursesTable() {
     if (!tbody) return;
 
     try {
-        const res = await fetch('/api/courses');
+        const res = await fetch('/courses');
         const data = await res.json();
-        courses = data.courses || [];
+        courses = data || [];
 
         tbody.innerHTML = '';
         courses.forEach(c => {
@@ -70,7 +70,7 @@ document.getElementById('addCourseForm')?.addEventListener('submit', async (e) =
     submitBtn.disabled = true;
 
     try {
-        const res = await fetch('/api/courses', {
+        const res = await fetch('/courses', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
@@ -122,7 +122,7 @@ document.getElementById('editCourseForm')?.addEventListener('submit', async (e) 
     submitBtn.disabled = true;
 
     try {
-        const res = await fetch(`/api/courses/${courseId}`, {
+        const res = await fetch(`/courses/${courseId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
@@ -155,7 +155,7 @@ async function deleteCourse(courseId, courseName, studentCount) {
     }
 
     try {
-        const res = await fetch(`/api/courses/${courseId}`, {
+        const res = await fetch(`/courses/${courseId}`, {
             method: 'DELETE'
         });
         const result = await res.json();
