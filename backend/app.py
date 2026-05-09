@@ -17,7 +17,7 @@ from utils.email_sender import send_qr_email
 
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), '..', 'frontend', 'static'))
 app.secret_key = os.getenv('JWT_SECRET', 'default-secret-key')
 
 # Flask-Login configuration
@@ -835,6 +835,14 @@ def export_attendance(current_user):
         return response
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# Route to serve QR code images for download
+@app.route('/static/images/qrcodes/<filename>')
+def serve_qr_image(filename):
+    from flask import send_from_directory
+    qr_folder = os.path.join(os.path.dirname(__file__), '..', 'frontend', 'static', 'images', 'qrcodes')
+    return send_from_directory(qr_folder, filename)
 
 
 if __name__ == '__main__':
