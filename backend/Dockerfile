@@ -2,11 +2,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies for Pillow and MySQL client
+# Install system dependencies for Pillow, MySQL client, and dlib
 RUN apt-get update && apt-get install -y \
     default-libmysqlclient-dev \
     gcc \
+    g++ \
     pkg-config \
+    cmake \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
