@@ -131,15 +131,26 @@ def dashboard(current_user):
         ''', (today,))
         absent_today = cursor.fetchone()['count']
         
+        # Get recent attendance records
+        cursor.execute('''
+            SELECT a.*, s.name as student_name, c.name as course_name
+            FROM attendance a
+            JOIN students s ON a.student_id = s.id
+            JOIN courses c ON s.course_id = c.id
+            ORDER BY a.date DESC, a.time_in DESC
+            LIMIT 10
+        ''')
+        recent_records = cursor.fetchall()
+        
         cursor.close()
         conn.close()
         
-        return jsonify({
-            'total_students': total_students,
-            'total_courses': total_courses,
-            'present_today': present_today,
-            'absent_today': absent_today
-        }), 200
+        return render_template('dashboard.html',
+            students_count=total_students,
+            courses_count=total_courses,
+            attendance_count=present_today,
+            recent_records=recent_records
+        )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -708,11 +719,6 @@ def upload_csv(current_user):
 
 
 # HTML Page Routes
-@app.route('/dashboard')
-@token_required
-def dashboard_page(current_user):
-    return render_template('dashboard.html')
-
 @app.route('/scanner')
 @token_required
 def scanner_page(current_user):
