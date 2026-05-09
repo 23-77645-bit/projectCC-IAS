@@ -35,13 +35,7 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-attendance_pass}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-attendance_db}
       JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
-      MAIL_SERVER: ${MAIL_SERVER:-smtp.gmail.com}
-      MAIL_PORT: ${MAIL_PORT:-587}
-      MAIL_USERNAME: ${MAIL_USERNAME:-}
-      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
-      FLASK_ENV: ${FLASK_ENV:-production}
+      FLASK_ENV: production
     ports:
       - "5000:5000"
     volumes:
@@ -49,17 +43,23 @@ services:
     networks:
       - attendance_network
 
-  nginx:
-    image: nginx:alpine
-    container_name: attendance_nginx
+  apache:
+    image: httpd:2.4
+    container_name: attendance_apache
     restart: unless-stopped
     depends_on:
       - backend
     ports:
-      - "80:80"
+      - "9090:80"
     volumes:
-      - ./frontend/static:/usr/share/nginx/html/static
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./apache/proxy.conf:/usr/local/apache2/conf/extra/proxy.conf:ro
+    command: >
+      sh -c "
+      echo 'LoadModule proxy_module modules/mod_proxy.so' >> /usr/local/apache2/conf/httpd.conf &&
+      echo 'LoadModule proxy_http_module modules/mod_proxy_http.so' >> /usr/local/apache2/conf/httpd.conf &&
+      echo 'Include conf/extra/proxy.conf' >> /usr/local/apache2/conf/httpd.conf &&
+      httpd-foreground
+      "
     networks:
       - attendance_network
 
