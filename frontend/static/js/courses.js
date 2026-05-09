@@ -12,7 +12,7 @@ function showFlash(message, type) {
 
 async function loadCourses() {
     try {
-        const res = await fetch('/courses');
+        const res = await fetch('/api/courses');
         const data = await res.json();
         courses = data || [];
     } catch (err) {
@@ -25,7 +25,7 @@ async function loadCoursesTable() {
     if (!tbody) return;
 
     try {
-        const res = await fetch('/courses');
+        const res = await fetch('/api/courses');
         const data = await res.json();
         courses = data || [];
 
@@ -70,7 +70,7 @@ document.getElementById('addCourseForm')?.addEventListener('submit', async (e) =
     submitBtn.disabled = true;
 
     try {
-        const res = await fetch('/courses', {
+        const res = await fetch('/api/courses', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)

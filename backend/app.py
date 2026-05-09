@@ -154,7 +154,7 @@ def dashboard(current_user):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/students', methods=['GET'])
+@app.route('/api/students', methods=['GET'])
 @token_required
 def get_students(current_user):
     try:
@@ -176,7 +176,7 @@ def get_students(current_user):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/students', methods=['POST'])
+@app.route('/api/students', methods=['POST'])
 @token_required
 def create_student(current_user):
     try:
@@ -233,7 +233,7 @@ def create_student(current_user):
         logger.error(f"Error creating student: {str(e)}")
         return jsonify({'error': 'Failed to create student'}), 500
 
-@app.route('/students/<int:id>', methods=['PUT'])
+@app.route('/api/students/<int:id>', methods=['PUT'])
 @token_required
 def update_student(current_user, id):
     try:
@@ -282,7 +282,7 @@ def update_student(current_user, id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/students/<int:id>', methods=['DELETE'])
+@app.route('/api/students/<int:id>', methods=['DELETE'])
 @token_required
 def delete_student(current_user, id):
     try:
@@ -314,7 +314,7 @@ def delete_student(current_user, id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/courses', methods=['GET'])
+@app.route('/api/courses', methods=['GET'])
 @token_required
 def get_courses(current_user):
     try:
@@ -337,7 +337,7 @@ def get_courses(current_user):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/courses', methods=['POST'])
+@app.route('/api/courses', methods=['POST'])
 @token_required
 def create_course(current_user):
     try:
@@ -373,7 +373,7 @@ def create_course(current_user):
         logger.error(f"Error creating course: {str(e)}")
         return jsonify({'error': 'Failed to create course'}), 500
 
-@app.route('/courses/<int:id>', methods=['PUT'])
+@app.route('/api/courses/<int:id>', methods=['PUT'])
 @token_required
 def update_course(current_user, id):
     try:
