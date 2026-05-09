@@ -44,7 +44,21 @@ async function loadStudents() {
     if (!tbody) return;
 
     try {
-        const res = await fetch('/api/students');
+        const token = localStorage.getItem('token');
+        const res = await fetch('/api/students', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!res.ok) {
+            if (res.status === 401) {
+                window.location.href = '/login';
+                return;
+            }
+            throw new Error('Failed to load students');
+        }
+        
         const data = await res.json();
         students = data || [];
 
@@ -84,9 +98,13 @@ document.getElementById('addStudentForm')?.addEventListener('submit', async (e) 
     submitBtn.disabled = true;
 
     try {
+        const token = localStorage.getItem('token');
         const res = await fetch('/api/students', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify(data)
         });
         const result = await res.json();
@@ -116,8 +134,12 @@ document.getElementById('uploadCsvForm')?.addEventListener('submit', async (e) =
     progressDiv.classList.remove('d-none');
 
     try {
+        const token = localStorage.getItem('token');
         const res = await fetch('/api/upload-csv', {
             method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            },
             body: formData
         });
         const result = await res.json();
@@ -166,9 +188,13 @@ document.getElementById('editStudentForm')?.addEventListener('submit', async (e)
     submitBtn.disabled = true;
 
     try {
+        const token = localStorage.getItem('token');
         const res = await fetch(`/api/students/${studentId}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify(data)
         });
         const result = await res.json();
@@ -194,8 +220,12 @@ async function deleteStudent(studentId, studentName) {
     }
 
     try {
+        const token = localStorage.getItem('token');
         const res = await fetch(`/api/students/${studentId}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
         });
         const result = await res.json();
 

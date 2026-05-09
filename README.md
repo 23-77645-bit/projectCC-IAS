@@ -8,7 +8,7 @@ A comprehensive attendance management system for Batangas State University ARASO
 # Clone and navigate to project
 cd /workspace
 
-# Create environment file
+# Create environment file with email configuration for QR code delivery
 cat > .env << EOF
 MYSQL_ROOT_PASSWORD=rootpassword
 MYSQL_DATABASE=attendance_db
@@ -18,6 +18,12 @@ JWT_SECRET=super_secure_jwt_secret_key_change_in_production_2025
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
 FLASK_ENV=production
+# Email Configuration (for sending QR codes to students)
+MAIL_SERVER=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USE_TLS=true
+MAIL_USERNAME=your-email@gmail.com
+MAIL_PASSWORD=your-app-specific-password
 EOF
 
 # Start all services with Apache reverse proxy
@@ -151,7 +157,7 @@ Choose your preferred deployment method:
 
 **Quick Start:**
 ```bash
-# Create environment file
+# Create environment file with email configuration for QR code delivery
 cat > .env << EOF
 MYSQL_ROOT_PASSWORD=rootpassword
 MYSQL_DATABASE=attendance_db
@@ -161,6 +167,12 @@ JWT_SECRET=super_secure_jwt_secret_key_change_in_production_2025
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
 FLASK_ENV=production
+# Email Configuration (for sending QR codes to students)
+MAIL_SERVER=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USE_TLS=true
+MAIL_USERNAME=your-email@gmail.com
+MAIL_PASSWORD=your-app-specific-password
 EOF
 
 # Start all services with Apache reverse proxy
