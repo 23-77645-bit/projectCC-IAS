@@ -12,7 +12,12 @@ function showFlash(message, type) {
 
 async function loadCourses() {
     try {
-        const res = await fetch('/api/courses');
+        const token = localStorage.getItem('token');
+        const res = await fetch('/api/courses', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
         const data = await res.json();
         courses = data || [];
     } catch (err) {
@@ -25,7 +30,12 @@ async function loadCoursesTable() {
     if (!tbody) return;
 
     try {
-        const res = await fetch('/api/courses');
+        const token = localStorage.getItem('token');
+        const res = await fetch('/api/courses', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
         const data = await res.json();
         courses = data || [];
 
@@ -70,9 +80,13 @@ document.getElementById('addCourseForm')?.addEventListener('submit', async (e) =
     submitBtn.disabled = true;
 
     try {
+        const token = localStorage.getItem('token');
         const res = await fetch('/api/courses', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify(data)
         });
         const result = await res.json();
@@ -122,9 +136,13 @@ document.getElementById('editCourseForm')?.addEventListener('submit', async (e) 
     submitBtn.disabled = true;
 
     try {
-        const res = await fetch(`/courses/${courseId}`, {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`/api/courses/${courseId}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify(data)
         });
         const result = await res.json();
@@ -155,8 +173,12 @@ async function deleteCourse(courseId, courseName, studentCount) {
     }
 
     try {
-        const res = await fetch(`/courses/${courseId}`, {
-            method: 'DELETE'
+        const token = localStorage.getItem('token');
+        const res = await fetch(`/api/courses/${courseId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
         });
         const result = await res.json();
 

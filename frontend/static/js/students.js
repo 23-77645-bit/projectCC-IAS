@@ -12,7 +12,12 @@ function showFlash(message, type) {
 
 async function loadCourses() {
     try {
-        const res = await fetch('/api/courses');
+        const token = localStorage.getItem('token');
+        const res = await fetch('/api/courses', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
         const data = await res.json();
         courses = data || [];
         
