@@ -56,5 +56,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/attendance.js"></script>
+<script src="{{ url_for('static', filename='js/attendance.js') }}"></script>
 {% endblock %}
