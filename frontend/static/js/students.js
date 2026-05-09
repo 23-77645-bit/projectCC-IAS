@@ -44,7 +44,7 @@ async function loadStudents() {
     if (!tbody) return;
 
     try {
-        const res = await fetch('/students');
+        const res = await fetch('/api/students');
         const data = await res.json();
         students = data || [];
 
@@ -84,7 +84,7 @@ document.getElementById('addStudentForm')?.addEventListener('submit', async (e) 
     submitBtn.disabled = true;
 
     try {
-        const res = await fetch('/students', {
+        const res = await fetch('/api/students', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
