@@ -52,6 +52,19 @@ MAIL_PASSWORD=your-app-password
 FLASK_ENV=production
 EOF
 ```
+### Required Create proxy 
+mkdir -p apache
+nano apache/proxy.conf
+
+### Paset it inside proxy.conf
+<VirtualHost *:80>
+
+    ProxyPreserveHost On
+
+    ProxyPass / http://backend:5000/
+    ProxyPassReverse / http://backend:5000/
+
+</VirtualHost>
 
 ### Step 2: Build and Start Containers
 
