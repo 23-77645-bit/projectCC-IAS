@@ -22,8 +22,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Copy frontend templates and static files
-COPY ../frontend/templates ./templates/
-COPY ../frontend/static ./static/
+COPY frontend/templates ./templates/
+COPY frontend/static ./static/
 
 # Create qrcodes directory structure
 RUN mkdir -p frontend/static/images/qrcodes

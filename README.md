@@ -2,7 +2,70 @@
 
 A comprehensive attendance management system for Batangas State University ARASOF-Nasugbu that leverages QR code technology for efficient student identification and real-time attendance tracking.
 
+## Quick Start
+
+```bash
+# Clone and navigate to project
+cd /workspace
+
+# Create environment file
+cat > .env << EOF
+MYSQL_ROOT_PASSWORD=rootpassword
+MYSQL_DATABASE=attendance_db
+MYSQL_USER=attendance_user
+MYSQL_PASSWORD=attendance_secure_password_2025
+JWT_SECRET=super_secure_jwt_secret_key_change_in_production_2025
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin123
+FLASK_ENV=production
+EOF
+
+# Start all services with Apache reverse proxy
+docker compose up --build -d
+
+# Access the application at http://localhost:9090
+# Login with: admin / admin123
+```
+
 ## System Architecture
+
+### Docker Compose Architecture (Apache)
+
+```mermaid
+graph TD
+    subgraph Client["Client Layer"]
+        Browser[Web Browser<br/>Port 9090]
+    end
+
+    subgraph Docker["Docker Containers"]
+        Apache[Apache HTTP Server<br/>Reverse Proxy<br/>Port 80]
+        
+        subgraph BackendContainer["Backend Container"]
+            Gunicorn[Gunicorn + Flask<br/>Port 5000]
+            Templates[HTML Templates]
+            Static[Static Files]
+        end
+        
+        subgraph DBContainer["Database Container"]
+            MariaDB[MariaDB 11<br/>Port 3306]
+            PVC[(Persistent Volume<br/>db_data)]
+        end
+    end
+
+    Browser -->|HTTP:9090| Apache
+    Apache -->|Proxy Pass| Gunicorn
+    Gunicorn -->|PyMySQL| MariaDB
+    MariaDB --> PVC
+    Gunicorn --> Templates
+    Gunicorn --> Static
+
+    style Client fill:#e1f5fe
+    style Docker fill:#fff3e0
+    style BackendContainer fill:#e8f5e9
+    style DBContainer fill:#fce4ec
+```
+
+### Kubernetes Architecture (Production)
 
 ```mermaid
 graph TD
@@ -47,6 +110,13 @@ graph TD
 
 ### Architecture Components Flow
 
+#### Docker Compose (Development/Small Production)
+1. **Browser** → User accesses via `http://localhost:9090`
+2. **Apache** → Reverse proxy forwards requests to backend container
+3. **Gunicorn/Flask** → Application server processes requests
+4. **MariaDB** → Persistent database with volume storage
+
+#### Kubernetes (Large Production)
 1. **Browser** → User accesses the web application via HTTPS
 2. **Nginx Ingress** → Routes external traffic, applies rate limiting and security headers
 3. **Backend Service** → Kubernetes ClusterIP service load-balances requests across backend pods
@@ -68,7 +138,8 @@ graph TD
 | CSS Framework | Bootstrap 5 (CDN) |
 | JavaScript | Vanilla JS |
 | QR Scanner | html5-qrcode (CDN) |
-| Web Server | Gunicorn + Nginx |
+| Web Server (Docker) | Gunicorn + Apache HTTP Server |
+| Web Server (K8s) | Gunicorn + Nginx Ingress |
 | Containerization | Docker + Docker Compose |
 | Orchestration | Kubernetes (Deployments, Services, HPA, Ingress) |
 
@@ -76,9 +147,7 @@ graph TD
 
 Choose your preferred deployment method:
 
-### Option 1: Docker Compose (Simplest - Recommended for Quick Start)
-
-See **[LOCAL_SETUP_GUIDE.md](LOCAL_SETUP_GUIDE.md)** for complete Docker Compose instructions.
+### Option 1: Docker Compose with Apache (Simplest - Recommended)
 
 **Quick Start:**
 ```bash
@@ -94,11 +163,16 @@ ADMIN_PASSWORD=admin123
 FLASK_ENV=production
 EOF
 
-# Start all services
-docker-compose up --build -d
+# Start all services with Apache reverse proxy
+docker compose up --build -d
 
-# Access at http://localhost
+# Access at http://localhost:9090
 ```
+
+**Apache Configuration:**
+- Reverse proxy forwards requests from port 9090 to backend (port 5000)
+- Logs available at: `docker logs attendance_apache`
+- Config file: `apache/proxy.conf`
 
 ### Option 2: Kubernetes with Kind (Production-Like Environment)
 
@@ -328,8 +402,9 @@ kubectl delete namespace attendance-system
 │   ├── backend-service.yaml   # Backend ClusterIP service
 │   ├── ingress.yaml           # Nginx Ingress configuration
 │   └── hpa.yaml               # HorizontalPodAutoscaler (70% CPU target)
-├── docker-compose.yml         # Multi-container orchestration
-├── nginx.conf                 # Nginx reverse proxy config (security headers, rate limiting)
+├── docker-compose.yml         # Multi-container orchestration (Apache reverse proxy)
+├── apache/
+│   └── proxy.conf             # Apache reverse proxy configuration
 ├── SECURITY.md                # Security analysis and risk assessment
 ├── KIND_DEPLOYMENT_GUIDE.md   # Step-by-step Kind (Kubernetes in Docker) setup
 ├── LOCAL_SETUP_GUIDE.md       # Complete local setup guide (Docker & Kubernetes)
@@ -381,7 +456,7 @@ kubectl delete namespace attendance-system
 8. **Access the application:**
    Open browser to `http://localhost:5000`
 
-### Option 2: Docker Compose (Recommended for Production)
+### Option 2: Docker Compose with Apache (Recommended for Production)
 
 1. **Ensure Docker and Docker Compose are installed:**
    ```bash
@@ -391,8 +466,16 @@ kubectl delete namespace attendance-system
 
 2. **Create environment file:**
    ```bash
-   cp backend/.env.example backend/.env
-   nano backend/.env  # Edit with your credentials
+   cat > .env << EOF
+   MYSQL_ROOT_PASSWORD=rootpassword
+   MYSQL_DATABASE=attendance_db
+   MYSQL_USER=attendance_user
+   MYSQL_PASSWORD=attendance_secure_password_2025
+   JWT_SECRET=super_secure_jwt_secret_key_change_in_production_2025
+   ADMIN_USERNAME=admin
+   ADMIN_PASSWORD=admin123
+   FLASK_ENV=production
+   EOF
    ```
 
 3. **Build and start all services:**
@@ -402,11 +485,14 @@ kubectl delete namespace attendance-system
 
 4. **View logs:**
    ```bash
-   docker compose logs -f
+   docker compose logs -f          # All services
+   docker logs attendance_apache   # Apache logs
+   docker logs attendance_backend  # Backend logs
+   docker logs attendance_db       # Database logs
    ```
 
 5. **Access the application:**
-   - Via Nginx: `http://localhost:80`
+   - Via Apache: `http://localhost:9090`
    - Direct backend: `http://localhost:5000`
 
 6. **Stop all services:**
@@ -451,7 +537,7 @@ docker compose up --build -d
 ```
 
 ### Step 2: Access the Login Page
-Open browser to `http://localhost:80` or `http://localhost:5000`
+Open browser to `http://localhost:9090` (via Apache) or `http://localhost:5000` (direct backend)
 
 ### Step 3: Login with Admin Credentials
 - **Username:** `admin` (or value from `.env` ADMIN_USERNAME)
@@ -541,26 +627,26 @@ For detailed security analysis, risk assessment, CIA triad mapping, and producti
 |---------|---------------|------------|
 | **Password Hashing** | Werkzeug (PBKDF2-SHA256) | Prevents plaintext password exposure |
 | **JWT Authentication** | 24-hour token expiration | Limits session hijacking window |
-| **Rate Limiting** | Nginx: 5 req/min on /login | Prevents brute-force attacks |
 | **Security Headers** | X-Frame-Options, CSP, HSTS | Prevents XSS, clickjacking, MIME sniffing |
 | **CSV Hardening** | MIME validation, 2MB limit, 200 row max | Prevents malicious file uploads, DoS |
 | **Input Sanitization** | Email regex, name stripping | Prevents SQL injection, XSS |
 | **Container Isolation** | Separate Docker networks | Limits lateral movement |
-| **Resource Limits** | CPU/memory requests & limits | Prevents resource exhaustion |
 | **Horizontal Scaling** | Kubernetes HPA (70% CPU target) | Ensures availability under load |
 | **Namespace Isolation** | Dedicated K8s namespace | Logical separation from other apps |
+
+**Note:** Rate limiting can be added to Apache using `mod_ratelimit` or `mod_evasive` modules for production deployments. For Kubernetes deployments, Nginx Ingress Controller provides built-in rate limiting.
 
 ### Security Testing Commands
 
 ```bash
-# Test rate limiting (should get 429 after 5 attempts)
-for i in {1..10}; do curl -X POST http://localhost/login -H "Content-Type: application/json" -d '{"username":"admin","password":"wrong"}' -w "\nAttempt $i: %{http_code}\n"; done
-
-# Verify security headers
-curl -I http://localhost | grep -E "X-Frame-Options|X-Content-Type-Options|Strict-Transport-Security"
+# Verify security headers (Apache)
+curl -I http://localhost:9090 | grep -E "X-Frame-Options|X-Content-Type-Options|Strict-Transport-Security"
 
 # Check container network isolation
 docker network inspect attendance_network
+
+# Test backend health
+curl http://localhost:5000/login
 ```
 
 ---
